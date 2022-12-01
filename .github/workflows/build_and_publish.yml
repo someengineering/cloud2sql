@@ -6,6 +6,8 @@ on:
     branches:
       - main
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -53,3 +55,25 @@ jobs:
           user: __token__
           password: ${{ secrets.PYPI_CLOUD2SQL }}
           packages_dir: ./dist/
+
+      - name: Build binary
+        id: pyinstaller
+        run: |
+          pip install pyinstaller
+          pyinstaller --clean --noconfirm --log-level=WARN --distpath=dist --workpath=build cloud2sql.spec
+          if [ "${{ github.ref_type }}" = tag ]; then
+              echo "target=cloud2sql-${{ github.ref_name }}.linux-amd64" >> $GITHUB_OUTPUT
+          else
+              echo "target=cloud2sql-${GITHUB_SHA::7}.linux-amd64" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Move binary
+        run: |
+          mv dist/cloud2sql dist/${{ steps.pyinstaller.outputs.target }}
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request' && github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ steps.pyinstaller.outputs.target }}
+          path: dist/${{ steps.pyinstaller.outputs.target }}
