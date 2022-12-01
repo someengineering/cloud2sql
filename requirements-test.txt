@@ -6,3 +6,4 @@ mypy==0.982
 tox==3.27.1
 wheel==0.38.4
 coverage==6.5.0
+resoto-plugin-example-collector==3.0.0rc3
