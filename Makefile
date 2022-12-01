@@ -76,14 +76,6 @@ coverage: ## check code coverage quickly with the default Python
 venv:
 	python3 -m venv venv --prompt "cloud2sql"
 	. ./venv/bin/activate && python3 -m pip install --upgrade pip
-	# region as long as version 3 is not available on pypi
-	. ./venv/bin/activate && pip install -e ../resoto/resotolib
-	. ./venv/bin/activate && pip install -e ../resoto/plugins/aws
-	. ./venv/bin/activate && pip install -e ../resoto/plugins/digitalocean
-	. ./venv/bin/activate && pip install -e ../resoto/plugins/gcp
-	. ./venv/bin/activate && pip install -e ../resoto/plugins/k8s
-	. ./venv/bin/activate && pip install -e ../resoto/plugins/example_collector
-	# end region
 	. ./venv/bin/activate && pip install -r requirements-test.txt
 	. ./venv/bin/activate && pip install -r requirements.txt
 	. ./venv/bin/activate && pip install -e .

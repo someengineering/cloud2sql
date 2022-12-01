@@ -11,3 +11,4 @@ __description__ = "Read infrastructure data from your cloud and export it to an 
 __author__ = "Some Engineering Inc."
 __license__ = "Apache 2.0"
 __copyright__ = "Copyright © 2022 Some Engineering Inc."
+__version__ = "0.4.0"
