@@ -72,6 +72,7 @@ jobs:
           mv dist/cloud2sql dist/${{ steps.pyinstaller.outputs.target }}
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request' && github.event_name != 'workflow_dispatch'
         uses: actions/upload-artifact@v2
         with:
           name: ${{ steps.pyinstaller.outputs.target }}
