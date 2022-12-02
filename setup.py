@@ -36,5 +36,5 @@ setup(
     setup_requires=setup_requirements,
     test_suite="tests",
     tests_require=test_required,
-    url="https://github.com/someengineering/resoto/cloud2sql",
+    url="https://github.com/someengineering/cloud2sql",
 )
