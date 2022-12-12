@@ -1,6 +1,7 @@
 from resotoclient.models import Model
 from resotolib.args import Namespace
-from sqlalchemy import Engine, MetaData
+from sqlalchemy import MetaData
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from cloud2sql.sql import SqlModel, SqlUpdater

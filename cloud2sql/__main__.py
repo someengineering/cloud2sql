@@ -2,7 +2,8 @@ from logging import getLogger
 
 from resotolib.args import Namespace, ArgumentParser
 from resotolib.logger import setup_logger
-from sqlalchemy import create_engine, Engine
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from cloud2sql.collect_plugins import collect_from_plugins
 
