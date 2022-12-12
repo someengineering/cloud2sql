@@ -1,7 +1,7 @@
 # Only list production dependencies. Everything else can be added to requirements-test.txt and requirements-dev.txt.
 
 # required for cloud2sql to run
-SQLAlchemy==2.0.0b4
+SQLAlchemy==1.4.45
 PyYAML>=6.0
 rich>=12.6.0
 resotoclient>=1.2.1

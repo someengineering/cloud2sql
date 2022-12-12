@@ -22,7 +22,7 @@ from resotolib.proc import emergency_shutdown
 from resotolib.types import Json
 from rich import print as rich_print
 from rich.live import Live
-from sqlalchemy import Engine
+from sqlalchemy.engine import Engine
 
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlModel, SqlUpdater
@@ -64,40 +64,41 @@ def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedba
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
     model = SqlModel(Model({k.fqn: k for k in kinds}))
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
-    ne_current = 0
-    progress_update = 5000
-    feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
+    ne_count = iter(range(0, node_edge_count))
+    progress_update = max(node_edge_count // 100, 50)
+    schema = f"create temp tables {engine.dialect.name}"
+    syncdb = f"synchronize {engine.dialect.name}"
+    feedback.progress_done(schema, 0, 1, context=[collector.cloud])
+    feedback.progress_done(syncdb, 0, node_edge_count, context=[collector.cloud])
     with engine.connect() as conn:
-        # create the ddl metadata from the kinds
-        model.create_schema(conn, args)
-        # ingest the data
-        updater = SqlUpdater(model)
-        node: BaseResource
-        for node in collector.graph.nodes:
-            node._graph = collector.graph
-            exported = node_to_dict(node)
-            exported["type"] = "node"
-            exported["ancestors"] = {
-                "cloud": {"reported": {"id": node.cloud().name}},
-                "account": {"reported": {"id": node.account().name}},
-                "region": {"reported": {"id": node.region().name}},
-                "zone": {"reported": {"id": node.zone().name}},
-            }
-            stmt = updater.insert_node(exported)
-            if stmt is not None:
-                conn.execute(stmt)
-            ne_current += 1
-            if ne_current % progress_update == 0:
-                feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
-        for from_node, to_node, _ in collector.graph.edges:
-            stmt = updater.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
-            if stmt is not None:
-                conn.execute(stmt)
-            ne_current += 1
-            if ne_current % progress_update == 0:
-                feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
-        # commit all the changes to the tmp tables
-        conn.commit()
+        with conn.begin():
+            # create the ddl metadata from the kinds
+            model.create_schema(conn, args)
+            feedback.progress_done(schema, 1, 1, context=[collector.cloud])
+            # ingest the data
+            updater = SqlUpdater(model)
+            node: BaseResource
+            for node in collector.graph.nodes:
+                node._graph = collector.graph
+                exported = node_to_dict(node)
+                exported["type"] = "node"
+                exported["ancestors"] = {
+                    "cloud": {"reported": {"id": node.cloud().name}},
+                    "account": {"reported": {"id": node.account().name}},
+                    "region": {"reported": {"id": node.region().name}},
+                    "zone": {"reported": {"id": node.zone().name}},
+                }
+                stmt = updater.insert_node(exported)
+                if stmt is not None:
+                    conn.execute(stmt)
+                if (nx := next(ne_count)) % progress_update == 0:
+                    feedback.progress_done(syncdb, nx, node_edge_count, context=[collector.cloud])
+            for from_node, to_node, _ in collector.graph.edges:
+                stmt = updater.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
+                if stmt is not None:
+                    conn.execute(stmt)
+                if (nx := next(ne_count)) % progress_update == 0:
+                    feedback.progress_done(syncdb, nx, node_edge_count, context=[collector.cloud])
     feedback.progress_done(collector.cloud, 1, 1)
 
 
