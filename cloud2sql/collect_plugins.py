@@ -22,10 +22,11 @@ from resotolib.proc import emergency_shutdown
 from resotolib.types import Json
 from rich import print as rich_print
 from rich.live import Live
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine
 
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlModel, SqlUpdater
+from cloud2sql.parquet import ParquetModel, ParquetBuilder
 
 log = getLogger("cloud2sql")
 
@@ -56,7 +57,57 @@ def configure(path_to_config: Optional[str]) -> Json:
     return {}
 
 
-def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace) -> None:
+def collect(collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace) -> None:
+    if args.parquet:
+        collect_parquet(collector, feedback, args)
+    else:
+        assert engine is not None
+        collect_sql(collector, engine, feedback, args)
+
+def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args: Namespace) -> None:
+    # collect cloud data
+    feedback.progress_done(collector.cloud, 0, 1)
+    collector.collect()
+    # read the kinds created from this collector
+    kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
+    model = ParquetModel(Model({k.fqn: k for k in kinds}))
+    node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
+    ne_current = 0
+    progress_update = 5000
+    feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
+    # create the ddl metadata from the kinds
+    model.create_schema()
+    # ingest the data
+    builder = ParquetBuilder(model)
+    node: BaseResource
+    for node in collector.graph.nodes:
+        node._graph = collector.graph
+        exported = node_to_dict(node)
+        exported["type"] = "node"
+        exported["ancestors"] = {
+            "cloud": {"reported": {"id": node.cloud().name}},
+            "account": {"reported": {"id": node.account().name}},
+            "region": {"reported": {"id": node.region().name}},
+            "zone": {"reported": {"id": node.zone().name}},
+        }
+        builder.insert_node(exported)
+        ne_current += 1
+        if ne_current % progress_update == 0:
+            feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
+    for from_node, to_node, _ in collector.graph.edges:
+        builder.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
+        ne_current += 1
+        if ne_current % progress_update == 0:
+            feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
+    
+    import pyarrow.parquet as pq
+
+    for table_name, table in builder.to_tables().items():
+        pq.write_table(table, f"{args.parquet}-{table_name}.parquet")
+    
+    feedback.progress_done(collector.cloud, 1, 1)
+
+def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace) -> None:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
@@ -112,12 +163,13 @@ def show_messages(core_messages: Queue[Json], end: Event) -> None:
         rich_print(message)
 
 
-def collect_from_plugins(engine: Engine, args: Namespace) -> None:
+def collect_from_plugins(args: Namespace) -> None:
     # the multiprocessing manager is used to share data between processes
     mp_manager = multiprocessing.Manager()
     core_messages: Queue[Json] = mp_manager.Queue()
     feedback = CoreFeedback("cloud2sql", "collect", "collect", core_messages)
     raw_config = configure(args.config)
+    engine = create_engine(args.db) if args.db else None
     all_collectors = collectors(raw_config, feedback)
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
