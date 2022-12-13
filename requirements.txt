@@ -9,7 +9,9 @@ resotoclient>=1.2.1
 # bundle popular db drivers
 psycopg2-binary>=2.9.5 # postgres
 pymysql>=1.0.2 # mysql + mariadb
-snowflake-sqlalchemy>=1.4.5 # snowflake
+
+# Install snowflake connector
+# snowflake-sqlalchemy>=1.4.5
 
 resotolib>=3.0.0
 # all collector plugins
