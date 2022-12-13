@@ -1,12 +1,11 @@
 from resotoclient.models import Kind, Model, Property, JsObject
 from resotolib.types import Json
-from typing import Dict, Optional, Tuple, List, Any, Callable
+from typing import Dict, Tuple, List, Any
 from resotolib.baseresources import BaseResource
 from resotolib import baseresources
 import pyarrow as pa
 import inspect
 from cloud2sql.util import value_in_path
-import pandas as pd
 import json
 
 # This set will hold the names of all "base" resources
@@ -136,7 +135,7 @@ class ParquetBuilder:
         self.table_content: Dict[str, List[Dict[str, Any]]] = {}
 
     def insert_value(self, table_name: str, values: Any) -> bool:
-        if schema := self.model.schemas.get(table_name):
+        if self.model.schemas.get(table_name):
             table = self.table_content.get(table_name, [])
             table.append(values)
             self.table_content[table_name] = table
