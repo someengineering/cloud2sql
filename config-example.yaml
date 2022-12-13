@@ -1,7 +1,5 @@
 k8s:
   # Use the default kubeconfig file and collect all contexts.
   config_files:
-    - path: /Users/matthias/.kube/configs/tmp/analytics_posthog
+    - path: "~/.kube/config"
       all_contexts: true
-  collect:
-    - pods
