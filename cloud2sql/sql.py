@@ -7,23 +7,11 @@ from resotolib import baseresources
 from resotolib.args import Namespace
 from resotolib.baseresources import BaseResource
 from resotolib.types import Json
-from sqlalchemy import (
-    Boolean,
-    Column,
-    Connection,
-    Double,
-    Float,
-    Insert,
-    Integer,
-    JSON,
-    MetaData,
-    String,
-    Table,
-    ValuesBase,
-    DDL,
-    Engine,
-)
+from sqlalchemy import Boolean, Column, Float, Integer, JSON, MetaData, String, Table, DDL
+from sqlalchemy.engine import Engine, Connection
+from sqlalchemy.sql import Insert
 from sqlalchemy.sql.ddl import DropTable, DropConstraint
+from sqlalchemy.sql.dml import ValuesBase
 from sqlalchemy.sql.type_api import TypeEngine
 
 from cloud2sql.util import value_in_path
@@ -66,7 +54,7 @@ class SqlModel:
         elif kind in "float":
             return Float
         elif kind in "double":
-            return Double
+            return Float  # use Double with sqlalchemy 2
         elif kind in ("string", "date", "datetime", "duration"):
             return String
         elif kind == "boolean":
@@ -159,22 +147,22 @@ class SqlModel:
     @staticmethod
     def swap_temp_tables(engine: Engine) -> None:
         with engine.connect() as connection:
-            metadata = MetaData()
-            metadata.reflect(connection, resolve_fks=False)
+            with connection.begin():
+                metadata = MetaData()
+                metadata.reflect(connection, resolve_fks=False)
 
-            def drop_table(tl: Table) -> None:
-                for cs in tl.foreign_key_constraints:
-                    connection.execute(DropConstraint(cs))  # type: ignore
-                connection.execute(DropTable(tl))
+                def drop_table(tl: Table) -> None:
+                    for cs in tl.foreign_key_constraints:
+                        connection.execute(DropConstraint(cs))  # type: ignore
+                    connection.execute(DropTable(tl))
 
-            for table in metadata.tables.values():
-                if table.name.startswith(temp_prefix):
-                    prod_table = table.name[len(temp_prefix) :]  # noqa: E203
-                    if prod_table in metadata.tables:
-                        drop_table(metadata.tables[prod_table])
-                    connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))  # type: ignore
-            # todo: create foreign key constraints on the final tables
-            connection.commit()
+                for table in metadata.tables.values():
+                    if table.name.startswith(temp_prefix):
+                        prod_table = table.name[len(temp_prefix) :]  # noqa: E203
+                        if prod_table in metadata.tables:
+                            drop_table(metadata.tables[prod_table])
+                        connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))  # type: ignore
+                # todo: create foreign key constraints on the final tables
 
 
 class SqlUpdater:

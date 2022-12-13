@@ -6,7 +6,7 @@ from pytest import fixture
 from resotolib.args import Namespace
 from resotolib.core.actions import CoreFeedback
 from resotolib.types import Json
-from sqlalchemy import create_engine, Engine
+from sqlalchemy.engine import create_engine, Engine
 
 from cloud2sql.sql import SqlModel, SqlUpdater
 
