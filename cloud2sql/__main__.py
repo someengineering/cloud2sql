@@ -2,6 +2,8 @@ from logging import getLogger
 
 from resotolib.args import Namespace, ArgumentParser
 from resotolib.logger import setup_logger
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from cloud2sql.collect_plugins import collect_from_plugins
 
@@ -32,9 +34,9 @@ def parse_args() -> Namespace:
     return args  # type: ignore
 
 
-def collect(args: Namespace) -> None:
+def collect(engine: Engine, args: Namespace) -> None:
     try:
-        collect_from_plugins(args)
+        collect_from_plugins(engine, args)
     except Exception as e:
         log.error("Error during collection", e)
         print(f"Error syncing data to database: {e}")
@@ -43,7 +45,8 @@ def collect(args: Namespace) -> None:
 def main() -> None:
     args = parse_args()
     setup_logger("cloud2sql", level=args.log_level, force=True)
-    collect(args)
+    engine = create_engine(args.db)
+    collect(engine, args)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import concurrent
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, Future
+import concurrent.futures
 from contextlib import suppress
 from logging import getLogger
 from queue import Queue
@@ -23,7 +24,7 @@ from resotolib.types import Json
 from rich import print as rich_print
 from rich.live import Live
 from sqlalchemy.engine import Engine
-from sqlalchemy import create_engine
+
 
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlModel, SqlUpdater
@@ -167,13 +168,12 @@ def show_messages(core_messages: Queue[Json], end: Event) -> None:
         rich_print(message)
 
 
-def collect_from_plugins(args: Namespace) -> None:
+def collect_from_plugins(engine: Optional[Engine], args: Namespace) -> None:
     # the multiprocessing manager is used to share data between processes
     mp_manager = multiprocessing.Manager()
     core_messages: Queue[Json] = mp_manager.Queue()
     feedback = CoreFeedback("cloud2sql", "collect", "collect", core_messages)
     raw_config = configure(args.config)
-    engine = create_engine(args.db) if args.db else None
     all_collectors = collectors(raw_config, feedback)
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -186,7 +186,9 @@ def collect_from_plugins(args: Namespace) -> None:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
             # when all collectors are done, we can swap all temp tables
-            SqlModel.swap_temp_tables(engine)
+            if args.parquet is None:
+                assert engine
+                SqlModel.swap_temp_tables(engine)
         except Exception as e:
             # set end and wait for live to finish, otherwise the cursor is not reset
             end.set()
