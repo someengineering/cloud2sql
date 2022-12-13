@@ -24,7 +24,9 @@ def parse_args() -> Namespace:
         help="The database url. See https://docs.sqlalchemy.org/en/20/core/engines.html.",
         required=False,
     )
-    group.add_argument("--parquet", help="Switch to parquet output mode and set the prefix of parquet files to write to")
+    group.add_argument(
+        "--parquet", help="Switch to parquet output mode and set the prefix of parquet files to write to"
+    )
     args = parser.parse_args()
     args.log_level = "CRITICAL" if args.show != "log" else "DEBUG" if args.debug else "INFO"
     return args  # type: ignore

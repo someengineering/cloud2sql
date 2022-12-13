@@ -57,12 +57,14 @@ def configure(path_to_config: Optional[str]) -> Json:
             return yaml.safe_load(f)  # type: ignore
     return {}
 
+
 def collect(collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace) -> None:
     if args.parquet:
         collect_parquet(collector, feedback, args)
     else:
         assert engine is not None
         collect_sql(collector, engine, feedback, args)
+
 
 def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args: Namespace) -> None:
     # collect cloud data
@@ -99,14 +101,13 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
         ne_current += 1
         if ne_current % progress_update == 0:
             feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
-    
+
     import pyarrow.parquet as pq
 
     for table_name, table in builder.to_tables().items():
         pq.write_table(table, f"{args.parquet}-{table_name}.parquet")
-    
-    feedback.progress_done(collector.cloud, 1, 1)
 
+    feedback.progress_done(collector.cloud, 1, 1)
 
 
 def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace) -> None:

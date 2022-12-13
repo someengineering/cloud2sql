@@ -25,7 +25,6 @@ carz = [
 carz_access = {name: ["ancestors", name, "reported", "id"] for name in ["cloud", "account", "region", "zone"]}
 
 
-
 class ParquetModel:
     def __init__(self, model: Model):
         self.model = model
@@ -36,34 +35,32 @@ class ParquetModel:
         ]
         self.schemas: Dict[str, pa.Schema] = {}
 
-
     def table_name(self, kind: str) -> str:
         replaced = kind.replace(".", "_")
-        return replaced 
+        return replaced
 
     def link_table_name(self, from_kind: str, to_kind: str) -> str:
         # 63 characters to be consistent with SQL model
         replaced = f"link_{self.table_name(from_kind)[0:25]}_{self.table_name(to_kind)[0:25]}"
         return replaced
 
-    def _parquet_type(self, property_kind: str) -> Tuple[pa.lib.DataType, Callable[[Any], Any]]: 
-        match property_kind:
-            case dictionary if dictionary.startswith("dict") or "[]" in dictionary:
-                return pa.string() # dicts and lists are converted to json strings
-            case "int32":
-                return pa.int32() 
-            case "int64":
-                return pa.int64()
-            case "float":
-                pa.float32()
-            case "double":
-                return pa.float64()
-            case "string", "datetime" | "date" | "duration":
-                return pa.string()
-            case "boolean":
-                return pa.bool_()
-            case _:
-                return pa.string() # convert to jsonstring
+    def _parquet_type(self, kind: str) -> pa.lib.DataType:
+        if kind.startswith("dict") or "[]" in kind:
+            return pa.string()  # dicts and lists are converted to json strings
+        elif kind == "int32":
+            return pa.int32()
+        elif kind == "int64":
+            return pa.int64()
+        elif kind == "float":
+            pa.float32()
+        elif kind == "double":
+            return pa.float64()
+        elif kind in {"string", "datetime", "date", "duration"}:
+            return pa.string()
+        elif kind == "boolean":
+            return pa.bool_()
+        else:
+            return pa.string()
 
     def create_schema(self) -> None:
         def table_schema(kind: Kind) -> None:
@@ -82,11 +79,7 @@ class ParquetModel:
             from_table = self.table_name(from_kind)
             to_table = self.table_name(to_kind)
             link_table = self.link_table_name(from_kind, to_kind)
-            if (
-                link_table not in self.schemas
-                and from_table in self.schemas
-                and to_table in self.schemas
-            ):
+            if link_table not in self.schemas and from_table in self.schemas and to_table in self.schemas:
                 schema = pa.schema(
                     [
                         pa.field("from_id", pa.string()),
@@ -94,7 +87,7 @@ class ParquetModel:
                     ]
                 )
                 self.schemas[link_table] = schema
-                
+
         def link_table_schema_from_successors(kind: Kind) -> None:
             _, successors = self.kind_properties(kind)
             # create link table for all linked entities
@@ -109,7 +102,6 @@ class ParquetModel:
             link_table_schema_from_successors(kind)
 
         return None
-
 
     def kind_properties(self, kind: Kind) -> Tuple[List[Property], List[str]]:
         visited = set()
@@ -156,7 +148,7 @@ class ParquetBuilder:
             reported: Json = node.get("reported", {})
             for name, value in reported.items():
                 if isinstance(value, dict) or isinstance(value, list) or isinstance(value, set):
-                    reported[name] = json.dumps(value) # convert to json in case of a nested object
+                    reported[name] = json.dumps(value)  # convert to json in case of a nested object
 
             reported["_id"] = node["id"]
             reported["cloud"] = value_in_path(node, carz_access["cloud"])
@@ -176,11 +168,9 @@ class ParquetBuilder:
             return None
         raise ValueError(f"Unknown node: {node}")
 
-
     def to_tables(self) -> Dict[str, pa.Table]:
         result = {}
         for table_name, table in self.table_content.items():
             schema = self.model.schemas[table_name]
             result[table_name] = pa.Table.from_pylist(table, schema)
         return result
-
