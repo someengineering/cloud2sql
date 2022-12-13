@@ -1,3 +1,5 @@
+from itertools import chain
+
 from resotoclient.models import Model
 from resotolib.args import Namespace
 from sqlalchemy import MetaData
@@ -40,49 +42,36 @@ def test_create_schema(model: Model, engine: Engine) -> None:
 
 
 def test_update(engine_with_schema: Engine, updater: SqlDefaultUpdater) -> None:
+    instance = {
+        "type": "node",
+        "id": "i-123",
+        "reported": {"kind": "some_instance", "id": "i-123", "name": "my-instance", "cores": 4, "memory": 8},
+        "ancestors": {
+            "cloud": {"reported": {"id": "some_cloud"}},
+            "account": {"reported": {"id": "some_account"}},
+            "region": {"reported": {"id": "some_region"}},
+            "zone": {"reported": {"id": "some_zone"}},
+        },
+    }
+    volume = {
+        "type": "node",
+        "id": "v-123",
+        "reported": {"kind": "some_volume", "id": "v-123", "name": "my-volume", "capacity": 12},
+        "ancestors": {
+            "cloud": {"reported": {"id": "some_cloud"}},
+            "account": {"reported": {"id": "some_account"}},
+            "region": {"reported": {"id": "some_region"}},
+            "zone": {"reported": {"id": "some_zone"}},
+        },
+    }
+
     with Session(engine_with_schema) as session:
-        session.execute(
-            updater.insert_node(
-                {
-                    "type": "node",
-                    "id": "i-123",
-                    "reported": {
-                        "kind": "some_instance",
-                        "id": "i-123",
-                        "name": "my-instance",
-                        "cores": 4,
-                        "memory": 8,
-                    },
-                    "ancestors": {
-                        "cloud": {"reported": {"id": "some_cloud"}},
-                        "account": {"reported": {"id": "some_account"}},
-                        "region": {"reported": {"id": "some_region"}},
-                        "zone": {"reported": {"id": "some_zone"}},
-                    },
-                }
-            )
-        )
-        session.execute(
-            updater.insert_node(
-                {
-                    "type": "node",
-                    "id": "v-123",
-                    "reported": {
-                        "kind": "some_volume",
-                        "id": "v-123",
-                        "name": "my-volume",
-                        "capacity": 12,
-                    },
-                    "ancestors": {
-                        "cloud": {"reported": {"id": "some_cloud"}},
-                        "account": {"reported": {"id": "some_account"}},
-                        "region": {"reported": {"id": "some_region"}},
-                        "zone": {"reported": {"id": "some_zone"}},
-                    },
-                }
-            )
-        )
-        session.execute(updater.insert_node({"type": "edge", "from": "i-123", "to": "v-123"}))
+        for stmt in chain(
+            updater.insert_nodes("some_instance", [instance]),
+            updater.insert_nodes("some_volume", [volume]),
+            updater.insert_edges(("some_instance", "some_volume"), [{"type": "edge", "from": "i-123", "to": "v-123"}]),
+        ):
+            session.execute(stmt)
 
         # one instance is persisted
         assert session.query(updater.metadata.tables["tmp_some_instance"]).all() == [

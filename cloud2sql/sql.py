@@ -1,20 +1,21 @@
 import inspect
+import logging
 from abc import ABC, abstractmethod
-from functools import lru_cache
-from typing import List, Any, Type, Tuple, Dict, Optional
+from typing import List, Any, Type, Tuple, Dict, Iterator
 
-from resotoclient.models import Kind, Model, Property, JsObject
+from resotoclient.models import Kind, Model, Property
 from resotolib import baseresources
 from resotolib.args import Namespace
 from resotolib.baseresources import BaseResource
 from resotolib.types import Json
 from sqlalchemy import Boolean, Column, Float, Integer, JSON, MetaData, String, Table, DDL
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.sql import Insert
 from sqlalchemy.sql.ddl import DropTable, DropConstraint
 from sqlalchemy.sql.dml import ValuesBase
 
 from cloud2sql.util import value_in_path
+
+log = logging.getLogger("resoto.cloud2sql")
 
 # This set will hold the names of all "base" resources
 # Since that are abstract classes, there will be no instances of them - hence we do not need a table for them.
@@ -33,30 +34,39 @@ carz = [
 carz_access = {name: ["ancestors", name, "reported", "id"] for name in ["cloud", "account", "region", "zone"]}
 
 
-def sql_kind_to_column_type(kind: str, model: Model) -> Any:  # Type[TypeEngine[Any]]
-    if "[]" in kind:
+def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEngine[Any]]
+    kind = model.kinds.get(kind_name)
+    if "[]" in kind_name:
         return JSON
-    elif kind.startswith("dict"):
+    elif kind_name.startswith("dict"):
         return JSON
-    elif kind in ("int32", "int64"):
+    elif kind_name == "any":
+        return JSON
+    elif kind_name in ("int32", "int64"):
         return Integer
-    elif kind in "float":
+    elif kind_name in "float":
         return Float
-    elif kind in "double":
+    elif kind_name in "double":
         return Float  # use Double with sqlalchemy 2
-    elif kind in ("string", "date", "datetime", "duration"):
+    elif kind_name in ("string", "date", "datetime", "duration"):
         return String
-    elif kind == "boolean":
+    elif kind_name == "boolean":
         return Boolean
-    else:
-        if (inner := model.kinds.get(kind, None)) and inner.runtime_kind:
-            return sql_kind_to_column_type(inner.runtime_kind, model)
+    elif kind and kind.properties:  # complex kind
         return JSON
+    elif kind and kind.runtime_kind is not None:  # refined simple type like enum
+        return sql_kind_to_column_type(kind.runtime_kind, model)
+    else:
+        raise ValueError(f"Not able to handle kind {kind_name}")
 
 
 class SqlUpdater(ABC):
     @abstractmethod
-    def insert_node(self, node: JsObject) -> Optional[ValuesBase]:
+    def insert_nodes(self, kind: str, nodes: List[Json]) -> Iterator[ValuesBase]:
+        pass
+
+    @abstractmethod
+    def insert_edges(self, from_to: Tuple[str, str], nodes: List[Json]) -> Iterator[ValuesBase]:
         pass
 
     @abstractmethod
@@ -95,6 +105,7 @@ class SqlDefaultUpdater(SqlUpdater):
         ]
         self.kind_by_id: Dict[str, str] = {}
         self.column_types_fn = kwargs.get("kind_to_column_type", sql_kind_to_column_type)
+        self.insert_batch_size = kwargs.get("insert_batch_size", 5000)
 
     def table_name(self, kind: str, with_tmp_prefix: bool = True) -> str:
         replaced = kind.replace(".", "_")
@@ -131,6 +142,8 @@ class SqlDefaultUpdater(SqlUpdater):
         return prs + carz, scs
 
     def create_schema(self, connection: Connection, args: Namespace) -> MetaData:
+        log.info(f"Create schema for {len(self.table_kinds)} kinds and their relationships")
+
         def table_schema(kind: Kind) -> None:
             table_name = self.table_name(kind.fqn)
             if table_name not in self.metadata.tables:
@@ -178,16 +191,7 @@ class SqlDefaultUpdater(SqlUpdater):
 
         return self.metadata
 
-    @lru_cache(maxsize=2048)
-    def insert(self, table_name: str) -> Optional[Insert]:
-        table = self.metadata.tables.get(table_name)
-        return table.insert() if table is not None else None
-
-    def insert_value(self, table_name: str, values: Dict[str, Any]) -> Optional[Insert]:
-        maybe_insert = self.insert(table_name)
-        return maybe_insert.values(values) if maybe_insert is not None else None
-
-    def insert_node(self, node: JsObject) -> Optional[ValuesBase]:
+    def node_to_json(self, node: Json) -> Json:
         if node.get("type") == "node" and "id" in node and "reported" in node:
             reported: Json = node.get("reported", {})
             reported["_id"] = node["id"]
@@ -195,16 +199,30 @@ class SqlDefaultUpdater(SqlUpdater):
             reported["account"] = value_in_path(node, carz_access["account"])
             reported["region"] = value_in_path(node, carz_access["region"])
             reported["zone"] = value_in_path(node, carz_access["zone"])
-            kind = reported.pop("kind")
-            self.kind_by_id[node["id"]] = kind
-            return self.insert_value(self.table_name(kind), reported)
+            reported.pop("kind", None)
+            return reported
         elif node.get("type") == "edge" and "from" in node and "to" in node:
-            from_id = node["from"]
-            to_id = node["to"]
-            if (from_kind := self.kind_by_id.get(from_id)) and (to_kind := self.kind_by_id.get(to_id)):
-                link_table = self.link_table_name(from_kind, to_kind)
-                return self.insert_value(link_table, {"from_id": from_id, "to_id": to_id})
+            return {"from_id": node["from"], "to_id": node["to"]}
         raise ValueError(f"Unknown node: {node}")
+
+    def insert_nodes(self, kind: str, nodes: List[Json]) -> Iterator[ValuesBase]:
+        # create a defaults dict with all properties set to None
+        kp, _ = self.kind_properties(self.model.kinds[kind])
+        defaults = {p.name: None for p in kp}
+
+        if (table := self.metadata.tables.get(self.table_name(kind))) is not None:
+            for batch in (nodes[i : i + self.insert_batch_size] for i in range(0, len(nodes), self.insert_batch_size)):
+                converted = [defaults | self.node_to_json(node) for node in batch]
+                yield table.insert().values(converted)
+
+    def insert_edges(self, from_to: Tuple[str, str], nodes: List[Json]) -> Iterator[ValuesBase]:
+        from_kind, to_kind = from_to
+        table = self.metadata.tables.get(self.link_table_name(from_kind, to_kind))
+        maybe_insert = table.insert() if table is not None else None
+        if maybe_insert is not None:
+            for batch in (nodes[i : i + self.insert_batch_size] for i in range(0, len(nodes), self.insert_batch_size)):
+                converted = [self.node_to_json(node) for node in batch]
+                yield maybe_insert.values(converted)
 
 
 # register your updater by dialect name here
@@ -212,7 +230,7 @@ DialectUpdater: Dict[str, Type[SqlUpdater]] = {}
 
 
 def sql_updater(model: Model, engine: Engine) -> SqlUpdater:
-    updater: Type[SqlUpdater] = DialectUpdater.get(engine.dialect.name, SqlDefaultUpdater)
-    res = updater(model)  # type: ignore
-    print(f"USE UPDATER for {engine.dialect.name}: {type(res)}")
-    return res
+    updater_class: Type[SqlUpdater] = DialectUpdater.get(engine.dialect.name, SqlDefaultUpdater)
+    updater: SqlUpdater = updater_class(model)  # type: ignore
+    log.info(f"Dialect {engine.dialect.name}: Use updater class {updater_class.__name__}")
+    return updater
