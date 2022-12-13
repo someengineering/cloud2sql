@@ -5,6 +5,9 @@ from resotolib.logger import setup_logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
+# TODO: how to import this?
+from cloud2sql.snowflake import SnowflakeUpdater  # noqa:F401
+
 from cloud2sql.collect_plugins import collect_from_plugins
 
 log = getLogger("cloud2sql")

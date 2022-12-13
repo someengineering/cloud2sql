@@ -1,4 +1,5 @@
 import inspect
+from abc import ABC, abstractmethod
 from functools import lru_cache
 from typing import List, Any, Type, Tuple, Dict, Optional
 
@@ -12,7 +13,6 @@ from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.sql import Insert
 from sqlalchemy.sql.ddl import DropTable, DropConstraint
 from sqlalchemy.sql.dml import ValuesBase
-from sqlalchemy.sql.type_api import TypeEngine
 
 from cloud2sql.util import value_in_path
 
@@ -33,8 +33,59 @@ carz = [
 carz_access = {name: ["ancestors", name, "reported", "id"] for name in ["cloud", "account", "region", "zone"]}
 
 
-class SqlModel:
-    def __init__(self, model: Model):
+def sql_kind_to_column_type(kind: str, model: Model) -> Any:  # Type[TypeEngine[Any]]
+    if "[]" in kind:
+        return JSON
+    elif kind.startswith("dict"):
+        return JSON
+    elif kind in ("int32", "int64"):
+        return Integer
+    elif kind in "float":
+        return Float
+    elif kind in "double":
+        return Float  # use Double with sqlalchemy 2
+    elif kind in ("string", "date", "datetime", "duration"):
+        return String
+    elif kind == "boolean":
+        return Boolean
+    else:
+        if (inner := model.kinds.get(kind, None)) and inner.runtime_kind:
+            return sql_kind_to_column_type(inner.runtime_kind, model)
+        return JSON
+
+
+class SqlUpdater(ABC):
+    @abstractmethod
+    def insert_node(self, node: JsObject) -> Optional[ValuesBase]:
+        pass
+
+    @abstractmethod
+    def create_schema(self, connection: Connection, args: Namespace) -> MetaData:
+        pass
+
+    @staticmethod
+    def swap_temp_tables(engine: Engine) -> None:
+        with engine.connect() as connection:
+            with connection.begin():
+                metadata = MetaData()
+                metadata.reflect(connection, resolve_fks=False)
+
+                def drop_table(tl: Table) -> None:
+                    for cs in tl.foreign_key_constraints:
+                        connection.execute(DropConstraint(cs))
+                    connection.execute(DropTable(tl))
+
+                for table in metadata.tables.values():
+                    if table.name.startswith(temp_prefix):
+                        prod_table = table.name[len(temp_prefix) :]  # noqa: E203
+                        if prod_table in metadata.tables:
+                            drop_table(metadata.tables[prod_table])
+                        connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))
+                # todo: create foreign key constraints on the final tables
+
+
+class SqlDefaultUpdater(SqlUpdater):
+    def __init__(self, model: Model, **kwargs: Any) -> None:
         self.model = model
         self.metadata = MetaData()
         self.table_kinds = [
@@ -42,25 +93,8 @@ class SqlModel:
             for kind in model.kinds.values()
             if kind.aggregate_root and kind.runtime_kind is None and kind.fqn not in base_kinds
         ]
-
-    @staticmethod
-    def column_type_from(kind: str) -> Type[TypeEngine[Any]]:
-        if "[]" in kind:
-            return JSON
-        elif kind.startswith("dict"):
-            return JSON
-        elif kind in ("int32", "int64"):
-            return Integer
-        elif kind in "float":
-            return Float
-        elif kind in "double":
-            return Float  # use Double with sqlalchemy 2
-        elif kind in ("string", "date", "datetime", "duration"):
-            return String
-        elif kind == "boolean":
-            return Boolean
-        else:
-            return JSON
+        self.kind_by_id: Dict[str, str] = {}
+        self.column_types_fn = kwargs.get("kind_to_column_type", sql_kind_to_column_type)
 
     def table_name(self, kind: str, with_tmp_prefix: bool = True) -> str:
         replaced = kind.replace(".", "_")
@@ -106,7 +140,7 @@ class SqlModel:
                     self.metadata,
                     *[
                         Column("_id", String, primary_key=True),
-                        *[Column(p.name, self.column_type_from(p.kind)) for p in properties],
+                        *[Column(p.name, self.column_types_fn(p.kind, self.model)) for p in properties],
                     ],
                 )
 
@@ -144,38 +178,12 @@ class SqlModel:
 
         return self.metadata
 
-    @staticmethod
-    def swap_temp_tables(engine: Engine) -> None:
-        with engine.connect() as connection:
-            with connection.begin():
-                metadata = MetaData()
-                metadata.reflect(connection, resolve_fks=False)
-
-                def drop_table(tl: Table) -> None:
-                    for cs in tl.foreign_key_constraints:
-                        connection.execute(DropConstraint(cs))  # type: ignore
-                    connection.execute(DropTable(tl))
-
-                for table in metadata.tables.values():
-                    if table.name.startswith(temp_prefix):
-                        prod_table = table.name[len(temp_prefix) :]  # noqa: E203
-                        if prod_table in metadata.tables:
-                            drop_table(metadata.tables[prod_table])
-                        connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))  # type: ignore
-                # todo: create foreign key constraints on the final tables
-
-
-class SqlUpdater:
-    def __init__(self, model: SqlModel):
-        self.model = model
-        self.kind_by_id: Dict[str, str] = {}
-
     @lru_cache(maxsize=2048)
     def insert(self, table_name: str) -> Optional[Insert]:
-        table = self.model.metadata.tables.get(table_name)
+        table = self.metadata.tables.get(table_name)
         return table.insert() if table is not None else None
 
-    def insert_value(self, table_name: str, values: Any) -> Optional[Insert]:
+    def insert_value(self, table_name: str, values: Dict[str, Any]) -> Optional[Insert]:
         maybe_insert = self.insert(table_name)
         return maybe_insert.values(values) if maybe_insert is not None else None
 
@@ -189,11 +197,22 @@ class SqlUpdater:
             reported["zone"] = value_in_path(node, carz_access["zone"])
             kind = reported.pop("kind")
             self.kind_by_id[node["id"]] = kind
-            return self.insert_value(self.model.table_name(kind), reported)
+            return self.insert_value(self.table_name(kind), reported)
         elif node.get("type") == "edge" and "from" in node and "to" in node:
             from_id = node["from"]
             to_id = node["to"]
             if (from_kind := self.kind_by_id.get(from_id)) and (to_kind := self.kind_by_id.get(to_id)):
-                link_table = self.model.link_table_name(from_kind, to_kind)
+                link_table = self.link_table_name(from_kind, to_kind)
                 return self.insert_value(link_table, {"from_id": from_id, "to_id": to_id})
         raise ValueError(f"Unknown node: {node}")
+
+
+# register your updater by dialect name here
+DialectUpdater: Dict[str, Type[SqlUpdater]] = {}
+
+
+def sql_updater(model: Model, engine: Engine) -> SqlUpdater:
+    updater: Type[SqlUpdater] = DialectUpdater.get(engine.dialect.name, SqlDefaultUpdater)
+    res = updater(model)  # type: ignore
+    print(f"USE UPDATER for {engine.dialect.name}: {type(res)}")
+    return res

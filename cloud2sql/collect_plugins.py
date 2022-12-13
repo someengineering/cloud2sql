@@ -25,7 +25,7 @@ from rich.live import Live
 from sqlalchemy.engine import Engine
 
 from cloud2sql.show_progress import CollectInfo
-from cloud2sql.sql import SqlModel, SqlUpdater
+from cloud2sql.sql import SqlUpdater, sql_updater
 
 log = getLogger("cloud2sql")
 
@@ -62,7 +62,7 @@ def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedba
     collector.collect()
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    model = SqlModel(Model({k.fqn: k for k in kinds}))
+    updater = sql_updater(Model({k.fqn: k for k in kinds}), engine)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_count = iter(range(0, node_edge_count))
     progress_update = max(node_edge_count // 100, 50)
@@ -73,10 +73,9 @@ def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedba
     with engine.connect() as conn:
         with conn.begin():
             # create the ddl metadata from the kinds
-            model.create_schema(conn, args)
+            updater.create_schema(conn, args)
             feedback.progress_done(schema, 1, 1, context=[collector.cloud])
             # ingest the data
-            updater = SqlUpdater(model)
             node: BaseResource
             for node in collector.graph.nodes:
                 node._graph = collector.graph
@@ -131,7 +130,7 @@ def collect_from_plugins(engine: Engine, args: Namespace) -> None:
             for future in concurrent.futures.as_completed(futures):
                 future.result()
             # when all collectors are done, we can swap all temp tables
-            SqlModel.swap_temp_tables(engine)
+            SqlUpdater.swap_temp_tables(engine)
         except Exception as e:
             # set end and wait for live to finish, otherwise the cursor is not reset
             end.set()

@@ -4,13 +4,13 @@ from sqlalchemy import MetaData
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from cloud2sql.sql import SqlModel, SqlUpdater
+from cloud2sql.sql import SqlDefaultUpdater
 
 
 def test_create_schema(model: Model, engine: Engine) -> None:
-    sql = SqlModel(model)
+    updater: SqlDefaultUpdater = SqlDefaultUpdater(model)
     with engine.connect() as connection:
-        sql.create_schema(connection, Namespace())
+        updater.create_schema(connection, Namespace())
 
     info = MetaData()
     info.reflect(bind=engine)
@@ -39,10 +39,10 @@ def test_create_schema(model: Model, engine: Engine) -> None:
     assert set(info.tables["tmp_link_some_instance_some_volume"].columns.keys()) == {"to_id", "from_id"}
 
 
-def test_update(engine_with_schema: Engine, updater: SqlUpdater) -> None:
+def test_update(engine_with_schema: Engine, updater: SqlDefaultUpdater) -> None:
     with Session(engine_with_schema) as session:
         session.execute(
-            updater.insert_node(  # type: ignore
+            updater.insert_node(
                 {
                     "type": "node",
                     "id": "i-123",
@@ -63,7 +63,7 @@ def test_update(engine_with_schema: Engine, updater: SqlUpdater) -> None:
             )
         )
         session.execute(
-            updater.insert_node(  # type: ignore
+            updater.insert_node(
                 {
                     "type": "node",
                     "id": "v-123",
@@ -82,19 +82,19 @@ def test_update(engine_with_schema: Engine, updater: SqlUpdater) -> None:
                 }
             )
         )
-        session.execute(updater.insert_node({"type": "edge", "from": "i-123", "to": "v-123"}))  # type: ignore
+        session.execute(updater.insert_node({"type": "edge", "from": "i-123", "to": "v-123"}))
 
         # one instance is persisted
-        assert session.query(updater.model.metadata.tables["tmp_some_instance"]).all() == [
+        assert session.query(updater.metadata.tables["tmp_some_instance"]).all() == [
             ("i-123", 4, 8, "i-123", "my-instance", "some_cloud", "some_account", "some_region", "some_zone")
         ]
 
         # one volume is persisted
-        assert session.query(updater.model.metadata.tables["tmp_some_volume"]).all() == [
+        assert session.query(updater.metadata.tables["tmp_some_volume"]).all() == [
             ("v-123", 12, "v-123", "my-volume", "some_cloud", "some_account", "some_region", "some_zone")
         ]
 
         # link from instance to volume is persisted
-        assert session.query(updater.model.metadata.tables["tmp_link_some_instance_some_volume"]).all() == [
+        assert session.query(updater.metadata.tables["tmp_link_some_instance_some_volume"]).all() == [
             ("i-123", "v-123")
         ]

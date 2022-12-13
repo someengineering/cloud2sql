@@ -1,8 +1,7 @@
-aws:
-  # Take the aws default profile in ~/.aws/credentials and collect 2 regions
-  region: ["us-east-1", "eu-central-1"]
 k8s:
   # Use the default kubeconfig file and collect all contexts.
   config_files:
-    - path: "~/.kube/config"
+    - path: /Users/matthias/.kube/configs/tmp/analytics_posthog
       all_contexts: true
+  collect:
+    - pods
