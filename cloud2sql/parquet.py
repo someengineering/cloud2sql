@@ -3,6 +3,7 @@ from typing import Dict, List, Any
 import pyarrow as pa
 from cloud2sql.schema_utils import base_kinds, get_table_name, get_link_table_name, kind_properties, insert_node
 
+
 class ParquetModel:
     def __init__(self, model: Model):
         self.model = model

@@ -67,6 +67,19 @@ def collect(collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: 
         collect_sql(collector, engine, feedback, args)
 
 
+def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
+    node._graph = collector.graph
+    exported = node_to_dict(node)
+    exported["type"] = "node"
+    exported["ancestors"] = {
+        "cloud": {"reported": {"id": node.cloud().name}},
+        "account": {"reported": {"id": node.account().name}},
+        "region": {"reported": {"id": node.region().name}},
+        "zone": {"reported": {"id": node.zone().name}},
+    }
+    return exported
+
+
 def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args: Namespace) -> None:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
@@ -84,15 +97,7 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
     builder = ParquetBuilder(model)
     node: BaseResource
     for node in collector.graph.nodes:
-        node._graph = collector.graph
-        exported = node_to_dict(node)
-        exported["type"] = "node"
-        exported["ancestors"] = {
-            "cloud": {"reported": {"id": node.cloud().name}},
-            "account": {"reported": {"id": node.account().name}},
-            "region": {"reported": {"id": node.region().name}},
-            "zone": {"reported": {"id": node.zone().name}},
-        }
+        exported = prepare_node(node, collector)
         builder.insert_node(exported)
         ne_current += 1
         if ne_current % progress_update == 0:
@@ -134,15 +139,7 @@ def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFe
             updater = SqlUpdater(model)
             node: BaseResource
             for node in collector.graph.nodes:
-                node._graph = collector.graph
-                exported = node_to_dict(node)
-                exported["type"] = "node"
-                exported["ancestors"] = {
-                    "cloud": {"reported": {"id": node.cloud().name}},
-                    "account": {"reported": {"id": node.account().name}},
-                    "region": {"reported": {"id": node.region().name}},
-                    "zone": {"reported": {"id": node.zone().name}},
-                }
+                exported = prepare_node(node, collector)
                 stmt = updater.insert_node(exported)
                 if stmt is not None:
                     conn.execute(stmt)
