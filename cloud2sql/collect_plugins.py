@@ -7,7 +7,7 @@ from logging import getLogger
 from queue import Queue
 from threading import Event
 from time import sleep
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Tuple
 
 import pkg_resources
 import yaml
@@ -25,6 +25,7 @@ from rich import print as rich_print
 from rich.live import Live
 from sqlalchemy.engine import Engine
 
+from cloud2sql.analytics import AnalyticsEventSender
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
 
@@ -57,7 +58,9 @@ def configure(path_to_config: Optional[str]) -> Json:
     return {}
 
 
-def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace) -> None:
+def collect(
+    collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace
+) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
@@ -114,26 +117,27 @@ def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedba
                 ne_count += len(nodes)
                 feedback.progress_done(syncdb, ne_count, node_edge_count, context=[collector.cloud])
     feedback.progress_done(collector.cloud, 1, 1)
+    return collector.cloud, len(collector.graph.nodes), len(collector.graph.edges)
 
 
 def show_messages(core_messages: Queue[Json], end: Event) -> None:
     info = CollectInfo()
     while not end.is_set():
-        with Live(info.render(), auto_refresh=False, transient=True) as live:
+        with Live(info.render(), transient=True):
             with suppress(Exception):
                 info.handle_message(core_messages.get(timeout=1))
-                live.update(info.render())
     for message in info.rendered_messages():
         rich_print(message)
 
 
-def collect_from_plugins(engine: Engine, args: Namespace) -> None:
+def collect_from_plugins(engine: Engine, args: Namespace, sender: AnalyticsEventSender) -> None:
     # the multiprocessing manager is used to share data between processes
     mp_manager = multiprocessing.Manager()
     core_messages: Queue[Json] = mp_manager.Queue()
     feedback = CoreFeedback("cloud2sql", "collect", "collect", core_messages)
     raw_config = configure(args.config)
     all_collectors = collectors(raw_config, feedback)
+    analytics = {"total": len(all_collectors), "engine": engine.dialect.name} | {name: 1 for name in all_collectors}
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
         try:
@@ -143,7 +147,10 @@ def collect_from_plugins(engine: Engine, args: Namespace) -> None:
             for collector in all_collectors.values():
                 futures.append(executor.submit(collect, collector, engine, feedback, args))
             for future in concurrent.futures.as_completed(futures):
-                future.result()
+                name, nodes, edges = future.result()
+                analytics[f"{name}_nodes"] = nodes
+                analytics[f"{name}_edges"] = edges
+            sender.capture("collect", **analytics)
             # when all collectors are done, we can swap all temp tables
             swap_tables = "Make latest snapshot available"
             feedback.progress_done(swap_tables, 0, 1)
@@ -152,7 +159,9 @@ def collect_from_plugins(engine: Engine, args: Namespace) -> None:
         except Exception as e:
             # set end and wait for live to finish, otherwise the cursor is not reset
             end.set()
+            sender.capture("error", error=str(e))
             sleep(1)
+            sender.flush()
             log.error("An error occurred", exc_info=e)
             print(f"Encountered Error. Giving up. {e}")
             emergency_shutdown()

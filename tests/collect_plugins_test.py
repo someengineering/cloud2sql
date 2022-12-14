@@ -4,6 +4,7 @@ from resotolib.args import Namespace
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import Session
 
+from cloud2sql.analytics import NoEventSender
 from cloud2sql.collect_plugins import collect_from_plugins
 
 
@@ -13,7 +14,7 @@ def test_collect() -> None:
         cfg = f"{tmp}/config.yml"
         with open(cfg, "w") as f:
             f.write("example: {}\n")
-        collect_from_plugins(engine, Namespace(config=cfg, show="none"))
+        collect_from_plugins(engine, Namespace(config=cfg, show="none"), NoEventSender())
         # get all tables
         metadata = MetaData()
         metadata.reflect(bind=engine)
