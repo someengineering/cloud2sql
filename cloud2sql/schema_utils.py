@@ -92,7 +92,7 @@ def insert_node(
         reported: Json = node.get("reported", {})
         if flatten:
             for name, value in reported.items():
-                if isinstance(value, dict) or isinstance(value, list) or isinstance(value, set):
+                if isinstance(value, (dict, list, set)):
                     reported[name] = json.dumps(value)  # convert to json in case of a nested object
 
         reported["_id"] = node["id"]
