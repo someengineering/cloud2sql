@@ -4,8 +4,13 @@ from resotolib.args import Namespace, ArgumentParser
 from resotolib.logger import setup_logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-
 from cloud2sql.collect_plugins import collect_from_plugins
+
+# Will fail in case snowflake is not installed - which is fine.
+try:
+    from cloud2sql.snowflake import SnowflakeUpdater  # noqa:F401
+except ImportError:
+    pass
 
 log = getLogger("cloud2sql")
 
@@ -40,9 +45,15 @@ def collect(engine: Engine, args: Namespace) -> None:
 
 def main() -> None:
     args = parse_args()
-    setup_logger("cloud2sql", level=args.log_level, force=True)
-    engine = create_engine(args.db)
-    collect(engine, args)
+    try:
+        setup_logger("cloud2sql", level=args.log_level, force=True)
+        engine = create_engine(args.db)
+        collect(engine, args)
+    except Exception as e:
+        if args.debug:  # raise exception and show complete tracelog
+            raise e
+        else:
+            print(f"Error syncing data to database: {e}")
 
 
 if __name__ == "__main__":
