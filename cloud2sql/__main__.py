@@ -27,8 +27,9 @@ def parse_args() -> Namespace:
         required=False,
     )
     group.add_argument(
-        "--parquet", help="Switch to parquet output mode and set the prefix of parquet files to write to"
+        "--parquet", help="Switch to parquet output mode and set the directory to write parquet files to"
     )
+    parser.add_argument("--parquet_batch_size", type=int, default=1_000_000, help="Batch size for parquet output table")
     args = parser.parse_args()
     args.log_level = "CRITICAL" if args.show != "log" else "DEBUG" if args.debug else "INFO"
     return args  # type: ignore

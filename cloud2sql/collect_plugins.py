@@ -28,7 +28,7 @@ from sqlalchemy.engine import Engine
 
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlModel, SqlUpdater
-from cloud2sql.parquet import ParquetModel, ParquetBuilder
+from cloud2sql.parquet import ParquetModel, ParquetWriter
 
 log = getLogger("cloud2sql")
 
@@ -94,24 +94,21 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
     # create the ddl metadata from the kinds
     model.create_schema()
     # ingest the data
-    builder = ParquetBuilder(model)
+    writer = ParquetWriter(model, args.parquet, args.parquet_batch_size)
     node: BaseResource
     for node in collector.graph.nodes:
         exported = prepare_node(node, collector)
-        builder.insert_node(exported)
+        writer.insert_node(exported)
         ne_current += 1
         if ne_current % progress_update == 0:
             feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
     for from_node, to_node, _ in collector.graph.edges:
-        builder.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
+        writer.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
         ne_current += 1
         if ne_current % progress_update == 0:
             feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
 
-    import pyarrow.parquet as pq
-
-    for table_name, table in builder.to_tables().items():
-        pq.write_table(table, f"{args.parquet}-{table_name}.parquet")
+    writer.flush()
 
     feedback.progress_done(collector.cloud, 1, 1)
 

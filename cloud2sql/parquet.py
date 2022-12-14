@@ -1,7 +1,9 @@
 from resotoclient.models import Kind, Model, JsObject
-from typing import Dict, List, Any
+from typing import Dict, List, Any, NamedTuple, Optional
 import pyarrow as pa
 from cloud2sql.schema_utils import base_kinds, get_table_name, get_link_table_name, kind_properties, insert_node
+import pyarrow.parquet as pq
+from pathlib import Path
 
 
 class ParquetModel:
@@ -74,25 +76,42 @@ class ParquetModel:
         return None
 
 
-class ParquetBuilder:
-    def __init__(self, model: ParquetModel):
+class WriteResult(NamedTuple):
+    table_name: str
+
+
+class ParquetWriter:
+    def __init__(self, model: ParquetModel, result_directory: str, parquet_batch_size: int = 100_000):
         self.model = model
         self.kind_by_id: Dict[str, str] = {}
         self.table_content: Dict[str, List[Dict[str, Any]]] = {}
+        self.parquet_batch_size = parquet_batch_size
+        self.table_batches: Dict[str, int] = {}
+        self.result_directory = result_directory
 
-    def insert_value(self, table_name: str, values: Any) -> None:
+    def insert_value(self, table_name: str, values: Any) -> Optional[WriteResult]:
         if self.model.schemas.get(table_name):
             table = self.table_content.get(table_name, [])
             table.append(values)
             self.table_content[table_name] = table
+            return WriteResult(table_name)
         return None
 
     def insert_node(self, node: JsObject) -> None:
-        return insert_node(node, self.kind_by_id, self.insert_value, with_tmp_prefix=False, flatten=True)
+        result = insert_node(node, self.kind_by_id, self.insert_value, with_tmp_prefix=False, flatten=True)
+        if result and len(self.table_content[result.table_name]) > self.parquet_batch_size:
+            schema = self.model.schemas[result.table_name]
+            table = self.table_content[result.table_name]
+            pa_table = pa.Table.from_pylist(table, schema)
+            current_batch = self.table_batches.get(result.table_name, 0)
 
-    def to_tables(self) -> Dict[str, pa.Table]:
-        result = {}
+            pq.write_table(pa_table, Path(self.result_directory, f"{result.table_name}-{current_batch}.parquet"))
+            self.table_batches[result.table_name] = current_batch + 1
+
+    def flush(self) -> None:
         for table_name, table in self.table_content.items():
             schema = self.model.schemas[table_name]
-            result[table_name] = pa.Table.from_pylist(table, schema)
-        return result
+            pa_table = pa.Table.from_pylist(table, schema)
+            current_batch = self.table_batches.get(table_name, 0)
+            pq.write_table(pa_table, Path(self.result_directory, f"{table_name}-{current_batch}.parquet"))
+            self.table_batches[table_name] = current_batch + 1
