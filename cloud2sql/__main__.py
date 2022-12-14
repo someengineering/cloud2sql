@@ -1,5 +1,5 @@
 from logging import getLogger
-
+from typing import Optional
 from resotolib.args import Namespace, ArgumentParser
 from resotolib.logger import setup_logger
 from sqlalchemy import create_engine
@@ -34,7 +34,7 @@ def parse_args() -> Namespace:
     return args  # type: ignore
 
 
-def collect(engine: Engine, args: Namespace) -> None:
+def collect(engine: Optional[Engine], args: Namespace) -> None:
     try:
         collect_from_plugins(engine, args)
     except Exception as e:
@@ -45,7 +45,7 @@ def collect(engine: Engine, args: Namespace) -> None:
 def main() -> None:
     args = parse_args()
     setup_logger("cloud2sql", level=args.log_level, force=True)
-    engine = create_engine(args.db)
+    engine = create_engine(args.db) if args.db else None
     collect(engine, args)
 
 
