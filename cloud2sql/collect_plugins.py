@@ -61,7 +61,8 @@ def configure(path_to_config: Optional[str]) -> Json:
 
 
 def collect(
-    collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace) -> Tuple[str, int, int]:
+    collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace
+) -> Tuple[str, int, int]:
     if args.parquet:
         return collect_parquet(collector, feedback, args)
     else:
@@ -116,7 +117,8 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
     return collector.cloud, len(collector.graph.nodes), len(collector.graph.edges)
 
 
-def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace
+def collect_sql(
+    collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace
 ) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
@@ -189,7 +191,8 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace, sender: Anal
     feedback = CoreFeedback("cloud2sql", "collect", "collect", core_messages)
     raw_config = configure(args.config)
     all_collectors = collectors(raw_config, feedback)
-    analytics = {"total": len(all_collectors), "engine": engine.dialect.name} | {name: 1 for name in all_collectors}
+    engine_name = engine.dialect.name if engine else "parquet"
+    analytics = {"total": len(all_collectors), "engine": engine_name} | {name: 1 for name in all_collectors}
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
         try:
