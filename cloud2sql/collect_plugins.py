@@ -102,8 +102,15 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, conf
     ne_current = 0
     progress_update = node_edge_count // 100
     feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
+
+    # group all edges by kind of from/to
+    edges_by_kind: Dict[Tuple[str, str], List[Json]] = defaultdict(list)
+    for from_node, to_node, key in collector.graph.edges:
+        if key.edge_type == EdgeType.default:
+            edge_node = {"from": from_node.chksum, "to": to_node.chksum, "type": "edge"}
+            edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
     # create the ddl metadata from the kinds
-    model.create_schema()
+    model.create_schema(list(edges_by_kind.keys()))
     # ingest the data
     parquet_conf = config.get("destinations", {}).get("parquet")
     assert parquet_conf
@@ -117,11 +124,12 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, conf
         ne_current += 1
         if ne_current % progress_update == 0:
             feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
-    for from_node, to_node, _ in collector.graph.edges:
-        writer.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
-        ne_current += 1
-        if ne_current % progress_update == 0:
-            feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
+    for from_node, to_node, key in collector.graph.edges:
+        if key.edge_type == EdgeType.default:
+            writer.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
+            ne_current += 1
+            if ne_current % progress_update == 0:
+                feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
 
     writer.close()
 

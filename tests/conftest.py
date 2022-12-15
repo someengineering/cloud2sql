@@ -71,7 +71,7 @@ def updater(model: Model) -> SqlDefaultUpdater:
 @fixture()
 def parquet_writer(model: Model):
     parquet_model = ParquetModel(model)
-    parquet_model.create_schema()
+    parquet_model.create_schema([])
 
     p = Path(f"test_parquet_{uuid.uuid4()}")
     p.mkdir(exist_ok=True)

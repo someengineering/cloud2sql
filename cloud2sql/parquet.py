@@ -1,5 +1,5 @@
 from resotoclient.models import Kind, Model, JsObject
-from typing import Dict, List, Any, NamedTuple, Optional
+from typing import Dict, List, Any, NamedTuple, Optional, Tuple
 import pyarrow as pa
 from cloud2sql.schema_utils import (
     base_kinds,
@@ -41,7 +41,7 @@ class ParquetModel:
         else:
             return pa.string()
 
-    def create_schema(self) -> None:
+    def create_schema(self, edges: List[Tuple[str, str]]) -> None:
         def table_schema(kind: Kind) -> None:
             table_name = get_table_name(kind.fqn, with_tmp_prefix=False)
             if table_name not in self.schemas:
@@ -79,6 +79,9 @@ class ParquetModel:
         # step 2: create link tables for all kinds
         for kind in self.table_kinds:
             link_table_schema_from_successors(kind)
+        # step 3: create link tables for all seen edges
+        for from_kind, to_kind in edges:
+            link_table_schema(from_kind, to_kind)
 
         return None
 

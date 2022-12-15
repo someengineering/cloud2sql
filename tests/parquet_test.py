@@ -5,7 +5,7 @@ from cloud2sql.parquet import ParquetModel, ParquetWriter
 
 def test_create_schema(model: Model) -> None:
     parquet_model = ParquetModel(model)
-    parquet_model.create_schema()
+    parquet_model.create_schema([])
 
     assert parquet_model.schemas.keys() == {"some_instance", "some_volume", "link_some_instance_some_volume"}
     assert set(parquet_model.schemas["some_instance"].names) == {
