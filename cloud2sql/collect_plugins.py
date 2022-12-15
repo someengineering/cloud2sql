@@ -100,7 +100,7 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, conf
     model = ParquetModel(Model({k.fqn: k for k in kinds}))
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_current = 0
-    progress_update = 5000
+    progress_update = node_edge_count // 100
     feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
     # create the ddl metadata from the kinds
     model.create_schema()
