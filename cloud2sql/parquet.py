@@ -19,9 +19,7 @@ class ParquetModel:
         self.table_kinds = [
             kind
             for kind in model.kinds.values()
-            if kind.aggregate_root
-            and kind.runtime_kind is None
-            and kind.fqn not in base_kinds
+            if kind.aggregate_root and kind.runtime_kind is None and kind.fqn not in base_kinds
         ]
         self.schemas: Dict[str, pa.Schema] = {}
 
@@ -51,10 +49,7 @@ class ParquetModel:
                 schema = pa.schema(
                     [
                         pa.field("_id", pa.string()),
-                        *[
-                            pa.field(p.name, self._parquet_type(p.kind))
-                            for p in properties
-                        ],
+                        *[pa.field(p.name, self._parquet_type(p.kind)) for p in properties],
                     ]
                 )
                 self.schemas[table_name] = schema
@@ -63,11 +58,7 @@ class ParquetModel:
             from_table = get_table_name(from_kind, with_tmp_prefix=False)
             to_table = get_table_name(to_kind, with_tmp_prefix=False)
             link_table = get_link_table_name(from_kind, to_kind, with_tmp_prefix=False)
-            if (
-                link_table not in self.schemas
-                and from_table in self.schemas
-                and to_table in self.schemas
-            ):
+            if link_table not in self.schemas and from_table in self.schemas and to_table in self.schemas:
                 schema = pa.schema(
                     [
                         pa.field("from_id", pa.string()),

@@ -8,11 +8,12 @@ from resotolib.core.actions import CoreFeedback
 from resotolib.types import Json
 from sqlalchemy.engine import create_engine, Engine
 
-from cloud2sql.sql import SqlModel, SqlUpdater
+from cloud2sql.sql import SqlDefaultUpdater
 from cloud2sql.parquet import ParquetModel, ParquetWriter
 from pathlib import Path
 import shutil
 import uuid
+
 
 @fixture
 def model() -> Model:
@@ -63,24 +64,20 @@ def args() -> Namespace:
 
 
 @fixture()
-def sql_model(model: Model) -> SqlModel:
-    return SqlModel(model)
-
-
-@fixture()
-def updater(sql_model: SqlModel) -> SqlUpdater:
-    return SqlUpdater(sql_model)
+def updater(model: Model) -> SqlDefaultUpdater:
+    return SqlDefaultUpdater(model)
 
 
 @fixture()
 def parquet_writer(model: Model):
     parquet_model = ParquetModel(model)
     parquet_model.create_schema()
-    
+
     p = Path(f"test_parquet_{uuid.uuid4()}")
     p.mkdir(exist_ok=True)
     yield ParquetWriter(parquet_model, p, 1)
     shutil.rmtree(p)
+
 
 @fixture
 def engine() -> Engine:
@@ -88,10 +85,10 @@ def engine() -> Engine:
 
 
 @fixture
-def engine_with_schema(model: Model, sql_model: SqlModel, args: Namespace) -> Engine:
+def engine_with_schema(updater: SqlDefaultUpdater, args: Namespace) -> Engine:
     engine = create_engine("sqlite:///:memory:")
     with engine.connect() as connection:
-        sql_model.create_schema(connection, args)
+        updater.create_schema(connection, args)
     return engine
 
 

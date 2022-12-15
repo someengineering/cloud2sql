@@ -1,5 +1,6 @@
 import concurrent
 import multiprocessing
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, Future
 import concurrent.futures
 from contextlib import suppress
@@ -27,10 +28,10 @@ from sqlalchemy.engine import Engine
 
 
 from cloud2sql.show_progress import CollectInfo
-from cloud2sql.sql import SqlModel, SqlUpdater
+from cloud2sql.sql import SqlUpdater, sql_updater
 from cloud2sql.parquet import ParquetModel, ParquetWriter
 
-log = getLogger("cloud2sql")
+log = getLogger("resoto.cloud2sql")
 
 
 def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollectorPlugin]:
@@ -119,10 +120,9 @@ def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFe
     collector.collect()
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    model = SqlModel(Model({k.fqn: k for k in kinds}))
+    updater = sql_updater(Model({k.fqn: k for k in kinds}), engine)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
-    ne_count = iter(range(0, node_edge_count))
-    progress_update = max(node_edge_count // 100, 50)
+    ne_count = 0
     schema = f"create temp tables {engine.dialect.name}"
     syncdb = f"synchronize {engine.dialect.name}"
     feedback.progress_done(schema, 0, 1, context=[collector.cloud])
@@ -130,24 +130,39 @@ def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFe
     with engine.connect() as conn:
         with conn.begin():
             # create the ddl metadata from the kinds
-            model.create_schema(conn, args)
+            updater.create_schema(conn, args)
             feedback.progress_done(schema, 1, 1, context=[collector.cloud])
-            # ingest the data
-            updater = SqlUpdater(model)
+
+            # group all nodes by kind
+            nodes_by_kind = defaultdict(list)
             node: BaseResource
             for node in collector.graph.nodes:
+                node._graph = collector.graph
+                # create an exported node with the same scheme as resotocore
                 exported = prepare_node(node, collector)
-                stmt = updater.insert_node(exported)
-                if stmt is not None:
-                    conn.execute(stmt)
-                if (nx := next(ne_count)) % progress_update == 0:
-                    feedback.progress_done(syncdb, nx, node_edge_count, context=[collector.cloud])
+                nodes_by_kind[node.kind].append(exported)
+
+            # insert batches of nodes by kind
+            for kind, nodes in nodes_by_kind.items():
+                log.info(f"Inserting {len(nodes)} nodes of kind {kind}")
+                for insert in updater.insert_nodes(kind, nodes):
+                    conn.execute(insert)
+                ne_count += len(nodes)
+                feedback.progress_done(syncdb, ne_count, node_edge_count, context=[collector.cloud])
+
+            # group all nodes by kind of from/to
+            edges_by_kind = defaultdict(list)
             for from_node, to_node, _ in collector.graph.edges:
-                stmt = updater.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
-                if stmt is not None:
-                    conn.execute(stmt)
-                if (nx := next(ne_count)) % progress_update == 0:
-                    feedback.progress_done(syncdb, nx, node_edge_count, context=[collector.cloud])
+                edge_node = {"from": from_node.chksum, "to": to_node.chksum, "type": "edge"}
+                edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
+
+            # insert batches of edges by from/to kind
+            for from_to, nodes in edges_by_kind.items():
+                log.info(f"Inserting {len(nodes)} edges from {from_to[0]} to {from_to[1]}")
+                for insert in updater.insert_edges(from_to, nodes):
+                    conn.execute(insert)
+                ne_count += len(nodes)
+                feedback.progress_done(syncdb, ne_count, node_edge_count, context=[collector.cloud])
     feedback.progress_done(collector.cloud, 1, 1)
 
 
@@ -182,7 +197,10 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace) -> None:
             # when all collectors are done, we can swap all temp tables
             if args.parquet is None:
                 assert engine
-                SqlModel.swap_temp_tables(engine)
+                swap_tables = "Make latest snapshot available"
+                feedback.progress_done(swap_tables, 0, 1)
+                SqlUpdater.swap_temp_tables(engine)
+                feedback.progress_done(swap_tables, 1, 1)
         except Exception as e:
             # set end and wait for live to finish, otherwise the cursor is not reset
             end.set()
