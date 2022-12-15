@@ -17,15 +17,23 @@ def test_collect() -> None:
         # get all tables
         metadata = MetaData()
         metadata.reflect(bind=engine)
-        assert set(metadata.tables.keys()) == {
-            "example_account",
-            "example_custom_resource",
-            "example_instance",
-            "example_network",
-            "example_region",
-            "example_volume",
+        expected_counts = {
+            "example_account": 1,
+            "example_custom_resource": 1,
+            "example_instance": 2,
+            "example_network": 2,
+            "example_region": 2,
+            "example_volume": 2,
+            "link_example_account_example_region": 2,
+            "link_example_instance_example_volume": 2,
+            "link_example_network_example_instance": 2,
+            "link_example_region_example_custom_resource": 1,
+            "link_example_region_example_instance": 2,
+            "link_example_region_example_network": 2,
+            "link_example_region_example_volume": 2,
         }
-        # check that there are entries in the tables
+
+        assert set(metadata.tables.keys()) == expected_counts.keys()  # check that there are entries in the tables
         with Session(engine) as session:
             for table in metadata.tables.values():
-                assert session.query(table).count() > 0
+                assert session.query(table).count() == expected_counts[table.name]

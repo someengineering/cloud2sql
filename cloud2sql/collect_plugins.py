@@ -7,14 +7,14 @@ from logging import getLogger
 from queue import Queue
 from threading import Event
 from time import sleep
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Tuple
 
 import pkg_resources
 import yaml
 from resotoclient import Kind, Model
 from resotolib.args import Namespace
 from resotolib.baseplugin import BaseCollectorPlugin
-from resotolib.baseresources import BaseResource
+from resotolib.baseresources import BaseResource, EdgeType
 from resotolib.config import Config
 from resotolib.core.actions import CoreFeedback
 from resotolib.core.model_export import node_to_dict
@@ -50,7 +50,6 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
 
 
 def configure(path_to_config: Optional[str]) -> Json:
-    # Config.init_default_config()
     if path_to_config:
         with open(path_to_config) as f:
             return yaml.safe_load(f)  # type: ignore
@@ -61,6 +60,30 @@ def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedba
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
+
+    # group all nodes by kind
+    nodes_by_kind: Dict[str, List[Json]] = defaultdict(list)
+    node: BaseResource
+    for node in collector.graph.nodes:
+        node._graph = collector.graph
+        # create an exported node with the same scheme as resotocore
+        exported = node_to_dict(node)
+        exported["type"] = "node"
+        exported["ancestors"] = {
+            "cloud": {"reported": {"id": node.cloud().name}},
+            "account": {"reported": {"id": node.account().name}},
+            "region": {"reported": {"id": node.region().name}},
+            "zone": {"reported": {"id": node.zone().name}},
+        }
+        nodes_by_kind[node.kind].append(exported)
+
+    # group all edges by kind of from/to
+    edges_by_kind: Dict[Tuple[str, str], List[Json]] = defaultdict(list)
+    for from_node, to_node, key in collector.graph.edges:
+        if key.edge_type == EdgeType.default:
+            edge_node = {"from": from_node.chksum, "to": to_node.chksum, "type": "edge"}
+            edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
+
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
     updater = sql_updater(Model({k.fqn: k for k in kinds}), engine)
@@ -73,24 +96,8 @@ def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedba
     with engine.connect() as conn:
         with conn.begin():
             # create the ddl metadata from the kinds
-            updater.create_schema(conn, args)
+            updater.create_schema(conn, args, list(edges_by_kind.keys()))
             feedback.progress_done(schema, 1, 1, context=[collector.cloud])
-
-            # group all nodes by kind
-            nodes_by_kind = defaultdict(list)
-            node: BaseResource
-            for node in collector.graph.nodes:
-                node._graph = collector.graph
-                # create an exported node with the same scheme as resotocore
-                exported = node_to_dict(node)
-                exported["type"] = "node"
-                exported["ancestors"] = {
-                    "cloud": {"reported": {"id": node.cloud().name}},
-                    "account": {"reported": {"id": node.account().name}},
-                    "region": {"reported": {"id": node.region().name}},
-                    "zone": {"reported": {"id": node.zone().name}},
-                }
-                nodes_by_kind[node.kind].append(exported)
 
             # insert batches of nodes by kind
             for kind, nodes in nodes_by_kind.items():
@@ -99,12 +106,6 @@ def collect(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedba
                     conn.execute(insert)
                 ne_count += len(nodes)
                 feedback.progress_done(syncdb, ne_count, node_edge_count, context=[collector.cloud])
-
-            # group all nodes by kind of from/to
-            edges_by_kind = defaultdict(list)
-            for from_node, to_node, _ in collector.graph.edges:
-                edge_node = {"from": from_node.chksum, "to": to_node.chksum, "type": "edge"}
-                edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
 
             # insert batches of edges by from/to kind
             for from_to, nodes in edges_by_kind.items():
