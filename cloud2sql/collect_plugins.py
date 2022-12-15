@@ -8,14 +8,14 @@ from logging import getLogger
 from queue import Queue
 from threading import Event
 from time import sleep
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Tuple
 
 import pkg_resources
 import yaml
 from resotoclient import Kind, Model
 from resotolib.args import Namespace
 from resotolib.baseplugin import BaseCollectorPlugin
-from resotolib.baseresources import BaseResource
+from resotolib.baseresources import BaseResource, EdgeType
 from resotolib.config import Config
 from resotolib.core.actions import CoreFeedback
 from resotolib.core.model_export import node_to_dict
@@ -27,6 +27,7 @@ from rich.live import Live
 from sqlalchemy.engine import Engine
 
 
+from cloud2sql.analytics import AnalyticsEventSender
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
 from cloud2sql.parquet import ParquetModel, ParquetWriter
@@ -53,19 +54,19 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
 
 
 def configure(path_to_config: Optional[str]) -> Json:
-    # Config.init_default_config()
     if path_to_config:
         with open(path_to_config) as f:
             return yaml.safe_load(f)  # type: ignore
     return {}
 
 
-def collect(collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace) -> None:
+def collect(
+    collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace) -> Tuple[str, int, int]:
     if args.parquet:
-        collect_parquet(collector, feedback, args)
+        return collect_parquet(collector, feedback, args)
     else:
         assert engine is not None
-        collect_sql(collector, engine, feedback, args)
+        return collect_sql(collector, engine, feedback, args)
 
 
 def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
@@ -81,7 +82,7 @@ def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
     return exported
 
 
-def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args: Namespace) -> None:
+def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args: Namespace) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
@@ -112,12 +113,31 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
     writer.close()
 
     feedback.progress_done(collector.cloud, 1, 1)
+    return collector.cloud, len(collector.graph.nodes), len(collector.graph.edges)
 
 
-def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace) -> None:
+def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace
+) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
+
+    # group all nodes by kind
+    nodes_by_kind: Dict[str, List[Json]] = defaultdict(list)
+    node: BaseResource
+    for node in collector.graph.nodes:
+        node._graph = collector.graph
+        # create an exported node with the same scheme as resotocore
+        exported = prepare_node(node, collector)
+        nodes_by_kind[node.kind].append(exported)
+
+    # group all edges by kind of from/to
+    edges_by_kind: Dict[Tuple[str, str], List[Json]] = defaultdict(list)
+    for from_node, to_node, key in collector.graph.edges:
+        if key.edge_type == EdgeType.default:
+            edge_node = {"from": from_node.chksum, "to": to_node.chksum, "type": "edge"}
+            edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
+
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
     updater = sql_updater(Model({k.fqn: k for k in kinds}), engine)
@@ -130,17 +150,8 @@ def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFe
     with engine.connect() as conn:
         with conn.begin():
             # create the ddl metadata from the kinds
-            updater.create_schema(conn, args)
+            updater.create_schema(conn, args, list(edges_by_kind.keys()))
             feedback.progress_done(schema, 1, 1, context=[collector.cloud])
-
-            # group all nodes by kind
-            nodes_by_kind = defaultdict(list)
-            node: BaseResource
-            for node in collector.graph.nodes:
-                node._graph = collector.graph
-                # create an exported node with the same scheme as resotocore
-                exported = prepare_node(node, collector)
-                nodes_by_kind[node.kind].append(exported)
 
             # insert batches of nodes by kind
             for kind, nodes in nodes_by_kind.items():
@@ -150,12 +161,6 @@ def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFe
                 ne_count += len(nodes)
                 feedback.progress_done(syncdb, ne_count, node_edge_count, context=[collector.cloud])
 
-            # group all nodes by kind of from/to
-            edges_by_kind = defaultdict(list)
-            for from_node, to_node, _ in collector.graph.edges:
-                edge_node = {"from": from_node.chksum, "to": to_node.chksum, "type": "edge"}
-                edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
-
             # insert batches of edges by from/to kind
             for from_to, nodes in edges_by_kind.items():
                 log.info(f"Inserting {len(nodes)} edges from {from_to[0]} to {from_to[1]}")
@@ -164,26 +169,27 @@ def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFe
                 ne_count += len(nodes)
                 feedback.progress_done(syncdb, ne_count, node_edge_count, context=[collector.cloud])
     feedback.progress_done(collector.cloud, 1, 1)
+    return collector.cloud, len(collector.graph.nodes), len(collector.graph.edges)
 
 
 def show_messages(core_messages: Queue[Json], end: Event) -> None:
     info = CollectInfo()
     while not end.is_set():
-        with Live(info.render(), auto_refresh=False, transient=True) as live:
+        with Live(info.render(), transient=True):
             with suppress(Exception):
                 info.handle_message(core_messages.get(timeout=1))
-                live.update(info.render())
     for message in info.rendered_messages():
         rich_print(message)
 
 
-def collect_from_plugins(engine: Optional[Engine], args: Namespace) -> None:
+def collect_from_plugins(engine: Optional[Engine], args: Namespace, sender: AnalyticsEventSender) -> None:
     # the multiprocessing manager is used to share data between processes
     mp_manager = multiprocessing.Manager()
     core_messages: Queue[Json] = mp_manager.Queue()
     feedback = CoreFeedback("cloud2sql", "collect", "collect", core_messages)
     raw_config = configure(args.config)
     all_collectors = collectors(raw_config, feedback)
+    analytics = {"total": len(all_collectors), "engine": engine.dialect.name} | {name: 1 for name in all_collectors}
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
         try:
@@ -193,7 +199,10 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace) -> None:
             for collector in all_collectors.values():
                 futures.append(executor.submit(collect, collector, engine, feedback, args))
             for future in concurrent.futures.as_completed(futures):
-                future.result()
+                name, nodes, edges = future.result()
+                analytics[f"{name}_nodes"] = nodes
+                analytics[f"{name}_edges"] = edges
+            sender.capture("collect", **analytics)
             # when all collectors are done, we can swap all temp tables
             if args.parquet is None:
                 assert engine
@@ -204,7 +213,9 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace) -> None:
         except Exception as e:
             # set end and wait for live to finish, otherwise the cursor is not reset
             end.set()
+            sender.capture("error", error=str(e))
             sleep(1)
+            sender.flush()
             log.error("An error occurred", exc_info=e)
             print(f"Encountered Error. Giving up. {e}")
             emergency_shutdown()

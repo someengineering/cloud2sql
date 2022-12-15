@@ -59,7 +59,7 @@ class SqlUpdater(ABC):
         pass
 
     @abstractmethod
-    def create_schema(self, connection: Connection, args: Namespace) -> MetaData:
+    def create_schema(self, connection: Connection, args: Namespace, edges: List[Tuple[str, str]]) -> MetaData:
         pass
 
     @staticmethod
@@ -96,7 +96,7 @@ class SqlDefaultUpdater(SqlUpdater):
         self.column_types_fn = kwargs.get("kind_to_column_type", sql_kind_to_column_type)
         self.insert_batch_size = kwargs.get("insert_batch_size", 5000)
 
-    def create_schema(self, connection: Connection, args: Namespace) -> MetaData:
+    def create_schema(self, connection: Connection, args: Namespace, edges: List[Tuple[str, str]]) -> MetaData:
         log.info(f"Create schema for {len(self.table_kinds)} kinds and their relationships")
 
         def table_schema(kind: Kind) -> None:
@@ -137,6 +137,9 @@ class SqlDefaultUpdater(SqlUpdater):
         # step 2: create link tables for all kinds
         for kind in self.table_kinds:
             link_table_schema_from_successors(kind)
+        # step 3: create link tables for all seen edges
+        for from_kind, to_kind in edges:
+            link_table_schema(from_kind, to_kind)
 
         # drop tables if requested
         self.metadata.drop_all(connection)

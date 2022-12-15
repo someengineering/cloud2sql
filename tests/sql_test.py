@@ -12,7 +12,7 @@ from cloud2sql.sql import SqlDefaultUpdater
 def test_create_schema(model: Model, engine: Engine) -> None:
     updater: SqlDefaultUpdater = SqlDefaultUpdater(model)
     with engine.connect() as connection:
-        updater.create_schema(connection, Namespace())
+        updater.create_schema(connection, Namespace(), [])
 
     info = MetaData()
     info.reflect(bind=engine)
