@@ -20,35 +20,60 @@ pip install cloud2sql
 
 ## Usage
 
-The sources for `cloud2sql` are configured via a configuration file. Create your own configuration by adjusting the [config template file](./config-template.yaml).
+The sources and destinations for `cloud2sql` are configured via a configuration file. Create your own configuration by adjusting the [config template file](./config-template.yaml).
 You can safely delete the sections that are not relevant to you (e.g. if you do not use AWS, you can delete the `aws` section).
 All sections refer to cloud providers and are enabled if a configuration section is provided.
 
-After the sources are configured, you need to define the url to the database.
 The following databases are currently supported:
 
 #### SQLite
 
 ```
-sqlite:///path/to/resoto.db
+destinations:
+    sqlite:
+        database: /path/to/database.db
 ```
 
 #### PostgreSQL
 
 ```
-postgresql://user:password@host:port/dbname[?key=value&key=value...]
+destinations:
+    postgresql:
+        host: 127.0.0.1
+        port: 5432
+        user: cloud2sql
+        password: changeme
+        database: cloud2sql
+        args:
+            key: value
 ```
 
 #### MySQL
 
 ```
-mysql://username:password@host/dbname[?key=value&key=value...]
+destinations:
+    mysql:
+        host: 127.0.0.1
+        port: 3306
+        user: cloud2sql
+        password: changeme
+        database: cloud2sql
+        args:
+            key: value
 ```
 
 #### MariaDB
 
 ```
-mariadb://username:password@host/dbname[?key=value&key=value...]
+destinations:
+    mariadb:
+        host: 127.0.0.1
+        port: 3306
+        user: cloud2sql
+        password: changeme
+        database: cloud2sql
+        args:
+            key: value
 ```
 
 #### Apache Parquet
@@ -68,7 +93,7 @@ We use a minimal configuration [example](./config-example.yaml) and export the d
 The example uses our AWS default credentials and the default kubernetes config.
 
 ```bash
-cloud2sql --config config-example.yaml --db "sqlite:///resoto.db"
+cloud2sql --config config-example.yaml
 ```
 
 ## Local Development
@@ -79,4 +104,3 @@ Create a local development environment with the following command:
 make setup
 source venv/bin/activate
 ```
-

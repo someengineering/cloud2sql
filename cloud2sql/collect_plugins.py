@@ -56,10 +56,17 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
 
 
 def configure(path_to_config: Optional[str]) -> Json:
+    config = {}
     if path_to_config:
         with open(path_to_config) as f:
-            return yaml.safe_load(f)  # type: ignore
-    return {}
+            config = yaml.safe_load(f)  # type: ignore
+
+    if "sources" not in config:
+        raise ValueError("No sources configured")
+    if "destinations" not in config:
+        raise ValueError("No destinations configured")
+
+    return config
 
 
 def collect(
@@ -98,9 +105,11 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
     # create the ddl metadata from the kinds
     model.create_schema()
     # ingest the data
-    assert args.db.startswith("parquet://")
-    parquet_path = Path((args.db).replace("parquet://", ""))
-    writer = ParquetWriter(model, parquet_path, args.parquet_batch_size)
+    parquet_conf = raw_config.get("destinations", {}).get("parquet")
+    assert parquet_conf
+    parquet_path = Path(parquet_conf["path"])
+    parquet_batch_size = int(parquet_conf["batch_size"])
+    writer = ParquetWriter(model, parquet_path, parquet_batch_size)
     node: BaseResource
     for node in sorted(collector.graph.nodes, key=lambda n: n.kind):
         exported = prepare_node(node, collector)
@@ -192,7 +201,8 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace, sender: Anal
     core_messages: Queue[Json] = mp_manager.Queue()
     feedback = CoreFeedback("cloud2sql", "collect", "collect", core_messages)
     raw_config = configure(args.config)
-    all_collectors = collectors(raw_config, feedback)
+    sources = raw_config["sources"]
+    all_collectors = collectors(sources, feedback)
     engine_name = engine.dialect.name if engine else "parquet"
     analytics = {"total": len(all_collectors), "engine": engine_name} | {name: 1 for name in all_collectors}
     end = Event()

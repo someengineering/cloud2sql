@@ -6,7 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from cloud2sql.analytics import PosthogEventSender, NoEventSender, AnalyticsEventSender
-from cloud2sql.collect_plugins import collect_from_plugins
+from cloud2sql.collect_plugins import collect_from_plugins, configure
+from cloud2sql.util import db_string_from_config
 
 # Will fail in case snowflake is not installed - which is fine.
 try:
@@ -32,12 +33,6 @@ def parse_args() -> Namespace:
         help="Output to show during the process. Default: progress",
     )
     parser.add_argument(
-        "--db",
-        help="The database url or a parquet path. See https://docs.sqlalchemy.org/en/20/core/engines.html.",
-        required=False,
-    )
-    parser.add_argument("--parquet_batch_size", type=int, default=100_000, help="Batch rows before writing to parquet")
-    parser.add_argument(
         "--analytics-opt-out",
         default=False,
         action="store_true",
@@ -62,7 +57,9 @@ def main() -> None:
     try:
         setup_logger("resoto.cloud2sql", level=args.log_level, force=True)
         sender = NoEventSender() if args.analytics_opt_out else PosthogEventSender()
-        engine = None if args.db.startswith("parquet") else create_engine(args.db)
+        config = configure(args.config)
+        is_parquet = next(destinations.keys(), None) == "parquet"
+        engine = None if is_parquet else create_engine(db_string_from_config(config))
         collect(engine, args, sender)
     except Exception as e:
         if args.debug:  # raise exception and show complete tracelog
