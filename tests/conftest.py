@@ -9,7 +9,10 @@ from resotolib.types import Json
 from sqlalchemy.engine import create_engine, Engine
 
 from cloud2sql.sql import SqlModel, SqlUpdater
-
+from cloud2sql.parquet import ParquetModel, ParquetWriter
+from pathlib import Path
+import shutil
+import uuid
 
 @fixture
 def model() -> Model:
@@ -68,6 +71,16 @@ def sql_model(model: Model) -> SqlModel:
 def updater(sql_model: SqlModel) -> SqlUpdater:
     return SqlUpdater(sql_model)
 
+
+@fixture()
+def parquet_writer(model: Model):
+    parquet_model = ParquetModel(model)
+    parquet_model.create_schema()
+    
+    p = Path(f"test_parquet_{uuid.uuid4()}")
+    p.mkdir(exist_ok=True)
+    yield ParquetWriter(parquet_model, p, 1)
+    shutil.rmtree(p)
 
 @fixture
 def engine() -> Engine:

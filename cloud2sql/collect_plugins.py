@@ -108,7 +108,7 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
         if ne_current % progress_update == 0:
             feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
 
-    writer.flush()
+    writer.close()
 
     feedback.progress_done(collector.cloud, 1, 1)
 

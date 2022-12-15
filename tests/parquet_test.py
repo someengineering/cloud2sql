@@ -32,11 +32,9 @@ def test_create_schema(model: Model) -> None:
     assert set(parquet_model.schemas["link_some_instance_some_volume"].names) == {"to_id", "from_id"}
 
 
-def test_update(model: Model) -> None:
-    parquet_model = ParquetModel(model)
-    parquet_model.create_schema()
-    updater = ParquetWriter(parquet_model, "test.parquet", 10)
-    updater.insert_node(  # type: ignore
+def test_update(parquet_writer: ParquetWriter) -> None:
+
+    parquet_writer.insert_node(  # type: ignore
         {
             "type": "node",
             "id": "i-123",
@@ -55,7 +53,7 @@ def test_update(model: Model) -> None:
             },
         }
     )
-    updater.insert_node(  # type: ignore
+    parquet_writer.insert_node(  # type: ignore
         {
             "type": "node",
             "id": "v-123",
@@ -73,10 +71,10 @@ def test_update(model: Model) -> None:
             },
         }
     )
-    updater.insert_node({"type": "edge", "from": "i-123", "to": "v-123"})  # type: ignore
+    parquet_writer.insert_node({"type": "edge", "from": "i-123", "to": "v-123"})  # type: ignore
 
     # one instance is persisted
-    assert set(updater.table_content["some_instance"][0].values()) == {
+    assert set(parquet_writer.batches["some_instance"].rows[0].values()) == {
         "i-123",
         4,
         8,
@@ -88,8 +86,8 @@ def test_update(model: Model) -> None:
         "some_zone",
     }
 
-    # # one volume is persisted
-    assert set(updater.table_content["some_volume"][0].values()) == {
+    # one volume is persisted
+    assert set(parquet_writer.batches["some_volume"].rows[0].values()) == {
         "v-123",
         12,
         "v-123",
@@ -100,5 +98,15 @@ def test_update(model: Model) -> None:
         "some_zone",
     }
 
-    # # link from instance to volume is persisted
-    assert set(updater.table_content["link_some_instance_some_volume"][0].values()) == {"i-123", "v-123"}
+    # link from instance to volume is persisted
+    assert set(parquet_writer.batches["link_some_instance_some_volume"].rows[0].values()) == {"i-123", "v-123"}
+
+    # write the batch when the batch size is reached
+    parquet_writer.insert_node({"type": "edge", "from": "i-123", "to": "v-123"})  # type: ignore
+    assert len(parquet_writer.batches["link_some_instance_some_volume"].rows) == 0
+
+    # flush the batches and close the writer
+    parquet_writer.close()
+    assert len(parquet_writer.batches["some_instance"].rows) == 0
+    assert len(parquet_writer.batches["some_volume"].rows) == 0
+    assert len(parquet_writer.batches["link_some_instance_some_volume"].rows) == 0
