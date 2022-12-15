@@ -70,12 +70,12 @@ def configure(path_to_config: Optional[str]) -> Json:
 
 
 def collect(
-    collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace
+    collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace, config: Json
 ) -> Tuple[str, int, int]:
     if engine:
         return collect_sql(collector, engine, feedback, args)
     else:
-        return collect_parquet(collector, feedback, args)
+        return collect_parquet(collector, feedback, config)
 
 
 def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
@@ -91,7 +91,7 @@ def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
     return exported
 
 
-def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args: Namespace) -> Tuple[str, int, int]:
+def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, config: Json) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
@@ -105,7 +105,7 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
     # create the ddl metadata from the kinds
     model.create_schema()
     # ingest the data
-    parquet_conf = raw_config.get("destinations", {}).get("parquet")
+    parquet_conf = config.get("destinations", {}).get("parquet")
     assert parquet_conf
     parquet_path = Path(parquet_conf["path"])
     parquet_batch_size = int(parquet_conf["batch_size"])
@@ -212,7 +212,7 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace, sender: Anal
                 executor.submit(show_messages, core_messages, end)
             futures: List[Future[Any]] = []
             for collector in all_collectors.values():
-                futures.append(executor.submit(collect, collector, engine, feedback, args))
+                futures.append(executor.submit(collect, collector, engine, feedback, args, raw_config))
             for future in concurrent.futures.as_completed(futures):
                 name, nodes, edges = future.result()
                 analytics[f"{name}_nodes"] = nodes
