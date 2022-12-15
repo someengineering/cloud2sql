@@ -1,97 +1,105 @@
-aws:
-  # AWS Access Key ID (null to load from env - recommended)
-  access_key_id: null
-  # AWS Secret Access Key (null to load from env - recommended)
-  secret_access_key: null
-  # IAM role name to assume
-  role: null
-  # List of AWS profiles to collect
-  profiles: null
-  # List of AWS Account ID(s) to collect (null for all if scrape_org is true)
-  account: null
-  # List of AWS Regions to collect (null for all)
-  region: null
-  # Scrape the entire AWS organization
-  scrape_org: false
-  # Fork collector process instead of using threads
-  fork_process: true
-  # List of accounts to exclude when scraping the org
-  scrape_exclude_account: []
-  # Assume given role in current account
-  assume_current: false
-  # Do not scrape current account
-  do_not_scrape_current: false
-  # Account thread/process pool size
-  account_pool_size: 8
-  # Region thread pool size
-  region_pool_size: 128
-  # Number of threads available shared for all regions
-  shared_pool_size: 128
-  # Number of threads to collect a single region
-  region_resources_pool_size: 2
-  # List of AWS services to collect (default: all)
-  collect: []
-  # List of AWS services to exclude (default: none)
-  no_collect: []
-  # This value is used to look up atime and mtime for volumes and rds instances.
-  # It defines how long Resoto should look back for CloudWatch metrics.
-  # If no metric is found, now-period is used as atime and mtime. Defaults to 60 days.
-  cloudwatch_metrics_for_atime_mtime_period: '60d'
-  # Granularity of atime and mtime.
-  # Higher precision is more expensive: Resoto will fetch period * granularity data points.
-  # Defaults to 1 hour.
-  cloudwatch_metrics_for_atime_mtime_granularity: '1h'
-gcp:
-  # GCP service account file(s)
-  service_account: []
-  # GCP project(s)
-  project: []
-  # GCP services to collect (default: all)
-  collect: []
-  # GCP services to exclude (default: none)
-  no_collect: []
-  # GCP project thread/process pool size
-  project_pool_size: 8
-  # Fork collector process instead of using threads
-  fork_process: true
-digitalocean:
-  # DigitalOcean API tokens for the teams to be collected
-  api_tokens: []
-  # DigitalOcean Spaces access keys for the teams to be collected, separated by colons
-  spaces_access_keys: []
-k8s:
-  # Configure access via kubeconfig files.
-  # Structure:
-  #   - path: "/path/to/kubeconfig"
-  #     all_contexts: false
-  #     contexts: ["context1", "context2"]
-  config_files: []
-  # Alternative: configure access to k8s clusters directly in the config.
-  # Structure:
-  #   - name: 'k8s-cluster-name'
-  #     certificate_authority_data: 'CERT'
-  #     server: 'https://k8s-cluster-server.example.com'
-  #     token: 'TOKEN'
-  configs: []
-  # Objects to collect (default: all)
-  collect: []
-  # Objects to exclude (default: none)
-  no_collect: []
-  # Thread/process pool size
-  pool_size: 8
-  # Fork collector process instead of using threads
-  fork_process: false
-slack:
-  # Bot token
-  bot_token: null
-  # Include archived channels
-  include_archived: false
-  # Do not verify the Slack API server TLS certificate
-  do_not_verify_ssl: false
-onelogin:
-  # Onelogin region
-  region: 'us'
-  # Onelogin client ID
-  client_id: null
-  # Onelogin client secret
-  client_secret: null
+sources:
+  aws:
+    # AWS Access Key ID (null to load from env - recommended)
+    access_key_id: null
+    # AWS Secret Access Key (null to load from env - recommended)
+    secret_access_key: null
+    # IAM role name to assume
+    role: null
+    # List of AWS profiles to collect
+    profiles: null
+    # List of AWS Account ID(s) to collect (null for all if scrape_org is true)
+    account: null
+    # List of AWS Regions to collect (null for all)
+    region: null
+    # Scrape the entire AWS organization
+    scrape_org: false
+    # Fork collector process instead of using threads
+    fork_process: true
+    # List of accounts to exclude when scraping the org
+    scrape_exclude_account: []
+    # Assume given role in current account
+    assume_current: false
+    # Do not scrape current account
+    do_not_scrape_current: false
+    # Account thread/process pool size
+    account_pool_size: 8
+    # Region thread pool size
+    region_pool_size: 128
+    # Number of threads available shared for all regions
+    shared_pool_size: 128
+    # Number of threads to collect a single region
+    region_resources_pool_size: 2
+    # List of AWS services to collect (default: all)
+    collect: []
+    # List of AWS services to exclude (default: none)
+    no_collect: []
+    # This value is used to look up atime and mtime for volumes and rds instances.
+    # It defines how long Resoto should look back for CloudWatch metrics.
+    # If no metric is found, now-period is used as atime and mtime. Defaults to 60 days.
+    cloudwatch_metrics_for_atime_mtime_period: '60d'
+    # Granularity of atime and mtime.
+    # Higher precision is more expensive: Resoto will fetch period * granularity data points.
+    # Defaults to 1 hour.
+    cloudwatch_metrics_for_atime_mtime_granularity: '1h'
+  gcp:
+    # GCP service account file(s)
+    service_account: []
+    # GCP project(s)
+    project: []
+    # GCP services to collect (default: all)
+    collect: []
+    # GCP services to exclude (default: none)
+    no_collect: []
+    # GCP project thread/process pool size
+    project_pool_size: 8
+    # Fork collector process instead of using threads
+    fork_process: true
+  digitalocean:
+    # DigitalOcean API tokens for the teams to be collected
+    api_tokens: []
+    # DigitalOcean Spaces access keys for the teams to be collected, separated by colons
+    spaces_access_keys: []
+  k8s:
+    # Configure access via kubeconfig files.
+    # Structure:
+    #   - path: "/path/to/kubeconfig"
+    #     all_contexts: false
+    #     contexts: ["context1", "context2"]
+    config_files: []
+    # Alternative: configure access to k8s clusters directly in the config.
+    # Structure:
+    #   - name: 'k8s-cluster-name'
+    #     certificate_authority_data: 'CERT'
+    #     server: 'https://k8s-cluster-server.example.com'
+    #     token: 'TOKEN'
+    configs: []
+    # Objects to collect (default: all)
+    collect: []
+    # Objects to exclude (default: none)
+    no_collect: []
+    # Thread/process pool size
+    pool_size: 8
+    # Fork collector process instead of using threads
+    fork_process: false
+  slack:
+    # Bot token
+    bot_token: null
+    # Include archived channels
+    include_archived: false
+    # Do not verify the Slack API server TLS certificate
+    do_not_verify_ssl: false
+  onelogin:
+    # Onelogin region
+    region: 'us'
+    # Onelogin client ID
+    client_id: null
+    # Onelogin client secret
+    client_secret: null
+destinations:
+  posgresql:
+    host: 127.0.0.1
+    port: 5432
+    user: postgres
+    password: changeme
+    database: cloud2sql

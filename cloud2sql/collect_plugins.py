@@ -51,10 +51,17 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
 
 
 def configure(path_to_config: Optional[str]) -> Json:
+    config = {}
     if path_to_config:
         with open(path_to_config) as f:
-            return yaml.safe_load(f)  # type: ignore
-    return {}
+            config = yaml.safe_load(f)  # type: ignore
+
+    if "sources" not in config:
+        raise ValueError("No sources configured")
+    if "destinations" not in config:
+        raise ValueError("No destinations configured")
+
+    return config
 
 
 def collect(
@@ -137,7 +144,8 @@ def collect_from_plugins(engine: Engine, args: Namespace, sender: AnalyticsEvent
     core_messages: Queue[Json] = mp_manager.Queue()
     feedback = CoreFeedback("cloud2sql", "collect", "collect", core_messages)
     raw_config = configure(args.config)
-    all_collectors = collectors(raw_config, feedback)
+    sources = raw_config["sources"]
+    all_collectors = collectors(sources, feedback)
     analytics = {"total": len(all_collectors), "engine": engine.dialect.name} | {name: 1 for name in all_collectors}
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
