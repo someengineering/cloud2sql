@@ -70,7 +70,7 @@ class SqlUpdater(ABC):
         pass
 
     @abstractmethod
-    def create_schema(self, connection: Connection, args: Namespace) -> MetaData:
+    def create_schema(self, connection: Connection, args: Namespace, edges: List[Tuple[str, str]]) -> MetaData:
         pass
 
     @staticmethod
@@ -141,7 +141,7 @@ class SqlDefaultUpdater(SqlUpdater):
         prs, scs = base_props_not_visited(kind)
         return prs + carz, scs
 
-    def create_schema(self, connection: Connection, args: Namespace) -> MetaData:
+    def create_schema(self, connection: Connection, args: Namespace, edges: List[Tuple[str, str]]) -> MetaData:
         log.info(f"Create schema for {len(self.table_kinds)} kinds and their relationships")
 
         def table_schema(kind: Kind) -> None:
@@ -182,6 +182,9 @@ class SqlDefaultUpdater(SqlUpdater):
         # step 2: create link tables for all kinds
         for kind in self.table_kinds:
             link_table_schema_from_successors(kind)
+        # step 3: create link tables for all seen edges
+        for from_kind, to_kind in edges:
+            link_table_schema(from_kind, to_kind)
 
         # drop tables if requested
         self.metadata.drop_all(connection)

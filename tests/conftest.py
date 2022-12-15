@@ -73,7 +73,7 @@ def engine() -> Engine:
 def engine_with_schema(updater: SqlDefaultUpdater, args: Namespace) -> Engine:
     engine = create_engine("sqlite:///:memory:")
     with engine.connect() as connection:
-        updater.create_schema(connection, args)
+        updater.create_schema(connection, args, [])
     return engine
 
 
