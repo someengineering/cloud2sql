@@ -5,6 +5,8 @@ SQLAlchemy==1.4.45
 PyYAML>=6.0
 rich>=12.6.0
 resotoclient>=1.2.1
+posthog>=2.2.0
+requests>=2.28.1
 
 # bundle popular db drivers
 psycopg2-binary>=2.9.5 # postgres
