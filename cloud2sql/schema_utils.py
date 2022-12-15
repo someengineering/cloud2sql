@@ -24,23 +24,6 @@ carz = [
 carz_access = {name: ["ancestors", name, "reported", "id"] for name in ["cloud", "account", "region", "zone"]}
 
 
-# This set will hold the names of all "base" resources
-# Since that are abstract classes, there will be no instances of them - hence we do not need a table for them.
-base_kinds = {
-    clazz.kind for _, clazz in inspect.getmembers(baseresources, inspect.isclass) if issubclass(clazz, BaseResource)
-}
-
-temp_prefix = "tmp_"
-
-carz = [
-    Property("cloud", "string"),
-    Property("account", "string"),
-    Property("region", "string"),
-    Property("zone", "string"),
-]
-carz_access = {name: ["ancestors", name, "reported", "id"] for name in ["cloud", "account", "region", "zone"]}
-
-
 def get_table_name(kind: str, with_tmp_prefix: bool = True) -> str:
     replaced = kind.replace(".", "_")
     return temp_prefix + replaced if with_tmp_prefix else replaced

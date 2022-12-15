@@ -110,13 +110,17 @@ class ParquetWriter:
     def insert_value(self, table_name: str, values: Any) -> Optional[WriteResult]:
         if self.model.schemas.get(table_name):
 
+            def ensure_path(path: Path) -> Path:
+                path.mkdir(parents=True, exist_ok=True)
+                return path
+
             batch = self.batches.get(
                 table_name,
                 ParquetBatch(
                     [],
                     self.model.schemas[table_name],
                     pq.ParquetWriter(
-                        Path(self.result_directory, f"{table_name}.parquet"),
+                        Path(ensure_path(self.result_directory), f"{table_name}.parquet"),
                         self.model.schemas[table_name],
                     ),
                 ),

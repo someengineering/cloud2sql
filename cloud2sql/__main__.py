@@ -5,6 +5,7 @@ from resotolib.logger import setup_logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from cloud2sql.collect_plugins import collect_from_plugins
+from pathlib import Path
 
 # Will fail in case snowflake is not installed - which is fine.
 try:
@@ -32,7 +33,7 @@ def parse_args() -> Namespace:
         required=False,
     )
     group.add_argument(
-        "--parquet", help="Switch to parquet output mode and set the directory to write parquet files to"
+        "--parquet", type=Path, help="Switch to parquet output mode and set the directory to write parquet files to"
     )
     parser.add_argument("--parquet_batch_size", type=int, default=100_000, help="Batch rows before writing to parquet")
     args = parser.parse_args()
