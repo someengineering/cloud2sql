@@ -9,6 +9,7 @@ from queue import Queue
 from threading import Event
 from time import sleep
 from typing import Dict, Optional, List, Any, Tuple
+from pathlib import Path
 
 import pkg_resources
 import yaml
@@ -31,6 +32,7 @@ from cloud2sql.analytics import AnalyticsEventSender
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
 from cloud2sql.parquet import ParquetModel, ParquetWriter
+
 
 log = getLogger("resoto.cloud2sql")
 
@@ -63,11 +65,10 @@ def configure(path_to_config: Optional[str]) -> Json:
 def collect(
     collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace
 ) -> Tuple[str, int, int]:
-    if args.parquet:
-        return collect_parquet(collector, feedback, args)
-    else:
-        assert engine is not None
+    if engine:
         return collect_sql(collector, engine, feedback, args)
+    else:
+        return collect_parquet(collector, feedback, args)
 
 
 def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
@@ -97,9 +98,11 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, args
     # create the ddl metadata from the kinds
     model.create_schema()
     # ingest the data
-    writer = ParquetWriter(model, args.parquet, args.parquet_batch_size)
+    assert args.db.startswith("parquet://")
+    parquet_path = Path((args.db).replace("parquet://", ""))
+    writer = ParquetWriter(model, parquet_path, args.parquet_batch_size)
     node: BaseResource
-    for node in collector.graph.nodes:
+    for node in sorted(collector.graph.nodes, key=lambda n: n.kind):
         exported = prepare_node(node, collector)
         writer.insert_node(exported)
         ne_current += 1
@@ -128,7 +131,6 @@ def collect_sql(
     nodes_by_kind: Dict[str, List[Json]] = defaultdict(list)
     node: BaseResource
     for node in collector.graph.nodes:
-        node._graph = collector.graph
         # create an exported node with the same scheme as resotocore
         exported = prepare_node(node, collector)
         nodes_by_kind[node.kind].append(exported)
@@ -207,8 +209,7 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace, sender: Anal
                 analytics[f"{name}_edges"] = edges
             sender.capture("collect", **analytics)
             # when all collectors are done, we can swap all temp tables
-            if args.parquet is None:
-                assert engine
+            if engine:
                 swap_tables = "Make latest snapshot available"
                 feedback.progress_done(swap_tables, 0, 1)
                 SqlUpdater.swap_temp_tables(engine)
