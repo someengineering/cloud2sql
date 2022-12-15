@@ -7,7 +7,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from cloud2sql.analytics import PosthogEventSender, NoEventSender, AnalyticsEventSender
-from cloud2sql.collect_plugins import collect_from_plugins
+from cloud2sql.collect_plugins import collect_from_plugins, configure
+from cloud2sql.util import db_string_from_config
 
 # Will fail in case snowflake is not installed - which is fine.
 try:
@@ -31,11 +32,6 @@ def parse_args() -> Namespace:
         choices=["progress", "log", "none"],
         default="progress",
         help="Output to show during the process. Default: progress",
-    )
-    parser.add_argument(
-        "--db",
-        help="The database url. See https://docs.sqlalchemy.org/en/20/core/engines.html.",
-        required=True,
     )
     parser.add_argument(
         "--analytics-opt-out",
@@ -62,7 +58,8 @@ def main() -> None:
     try:
         setup_logger("resoto.cloud2sql", level=args.log_level, force=True)
         sender = NoEventSender() if args.analytics_opt_out else PosthogEventSender()
-        engine = create_engine(args.db)
+        config = configure(args.config)
+        engine = create_engine(db_string_from_config(config))
         collect(engine, args, sender)
     except Exception as e:
         if args.debug:  # raise exception and show complete tracelog
