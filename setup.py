@@ -24,7 +24,7 @@ setup(
     name=cloud2sql.__title__,
     version=cloud2sql.__version__,
     description=cloud2sql.__description__,
-    python_requires=">=3.10",
+    python_requires=">=3.9",
     classifiers=["Programming Language :: Python :: 3"],
     entry_points={"console_scripts": ["cloud2sql=cloud2sql.__main__:main"]},
     install_requires=required,
