@@ -1,6 +1,6 @@
 from typing import Union, List, Optional, Any
 
-from resotolib.types import JsonElement
+from resotolib.types import JsonElement, Json
 
 
 def value_in_path(element: JsonElement, path_or_name: Union[List[str], str]) -> Optional[Any]:
@@ -18,7 +18,7 @@ def value_in_path(element: JsonElement, path_or_name: Union[List[str], str]) -> 
     return at_idx(element, 0)
 
 
-def db_string_from_config(config: JsonElement) -> str:
+def db_string_from_config(config: Json) -> str:
     destinations = config.get("destinations", {})
 
     if len(destinations) != 1:

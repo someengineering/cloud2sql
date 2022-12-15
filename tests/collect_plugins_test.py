@@ -13,7 +13,7 @@ def test_collect() -> None:
         engine = create_engine("sqlite:///" + tmp + "/test.db")
         cfg = f"{tmp}/config.yml"
         with open(cfg, "w") as f:
-            f.write("example: {}\n")
+            f.write("sources:\n  example: {}\ndestinations:\n")
         collect_from_plugins(engine, Namespace(config=cfg, show="none"), NoEventSender())
         # get all tables
         metadata = MetaData()
