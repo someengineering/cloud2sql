@@ -4,7 +4,7 @@ Read infrastructure data from your cloud and export it to a SQL database.
 
 ## Installation
 
-Python 3.10 or higher is required.
+Python 3.9 or higher is required.
 It is recommended to use a separate virtual environment for this project. You can create one with the following command:
 
 ```bash
