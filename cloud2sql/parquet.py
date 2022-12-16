@@ -136,9 +136,7 @@ def close_writer(batch: ArrowBatch) -> None:
         raise ValueError(f"Unknown format {batch.writer}")
 
 
-def new_writer(
-    format: Literal["parquet", "csv"], table_name: str, schema: pa.Schema, result_dir: Path
-) -> FileWriter:
+def new_writer(format: Literal["parquet", "csv"], table_name: str, schema: pa.Schema, result_dir: Path) -> FileWriter:
     def ensure_path(path: Path) -> Path:
         path.mkdir(parents=True, exist_ok=True)
         return path
@@ -169,9 +167,7 @@ class ArrowWriter:
                 ArrowBatch(
                     [],
                     self.model.schemas[table_name],
-                    new_writer(
-                        self.output_format, table_name, self.model.schemas[table_name], self.result_directory
-                    ),
+                    new_writer(self.output_format, table_name, self.model.schemas[table_name], self.result_directory),
                 ),
             )
 
