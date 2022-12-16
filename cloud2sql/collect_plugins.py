@@ -8,7 +8,7 @@ from logging import getLogger
 from queue import Queue
 from threading import Event
 from time import sleep
-from typing import Dict, Optional, List, Any, Tuple
+from typing import Dict, Optional, List, Any, Tuple, Set
 from pathlib import Path
 
 import pkg_resources
@@ -104,13 +104,12 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, conf
     feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
 
     # group all edges by kind of from/to
-    edges_by_kind: Dict[Tuple[str, str], List[Json]] = defaultdict(list)
+    edges_by_kind: Set[Tuple[str, str]] = set()
     for from_node, to_node, key in collector.graph.edges:
         if key.edge_type == EdgeType.default:
-            edge_node = {"from": from_node.chksum, "to": to_node.chksum, "type": "edge"}
-            edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
+            edges_by_kind.add((from_node.kind, to_node.kind))
     # create the ddl metadata from the kinds
-    model.create_schema(list(edges_by_kind.keys()))
+    model.create_schema(list(edges_by_kind))
     # ingest the data
     parquet_conf = config.get("destinations", {}).get("parquet")
     assert parquet_conf

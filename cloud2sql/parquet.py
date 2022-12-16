@@ -135,9 +135,10 @@ class ParquetWriter:
         return None
 
     def write_batch_bundle(self, batch: ParquetBatch) -> None:
-        pa_table = pa.Table.from_pylist(batch.rows, batch.schema)
-        batch.writer.write_table(pa_table)
+        rows = batch.rows
         batch.rows = []
+        pa_table = pa.Table.from_pylist(rows, batch.schema)
+        batch.writer.write_table(pa_table)
 
     def insert_node(self, node: JsObject) -> None:
         result = insert_node(
