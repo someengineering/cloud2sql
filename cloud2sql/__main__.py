@@ -7,7 +7,7 @@ from sqlalchemy.engine import Engine
 
 from cloud2sql.analytics import PosthogEventSender, NoEventSender, AnalyticsEventSender
 from cloud2sql.collect_plugins import collect_from_plugins, configure
-from cloud2sql.util import db_string_from_config
+from cloud2sql.util import db_string_from_config, check_parquet_driver
 
 # Will fail in case snowflake is not installed - which is fine.
 try:
@@ -58,8 +58,11 @@ def main() -> None:
         setup_logger("resoto.cloud2sql", level=args.log_level, force=True)
         sender = NoEventSender() if args.analytics_opt_out else PosthogEventSender()
         config = configure(args.config)
-        is_parquet = next(iter(config["destinations"].keys()), None) == "parquet"
-        engine = None if is_parquet else create_engine(db_string_from_config(config))
+        engine = None
+        if next(iter(config["destinations"].keys()), None) == "parquet":
+            check_parquet_driver()
+        else:
+            engine = create_engine(db_string_from_config(config))
         collect(engine, args, sender)
     except Exception as e:
         if args.debug:  # raise exception and show complete tracelog

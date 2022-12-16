@@ -26,8 +26,8 @@ def db_string_from_config(config: Json) -> str:
         raise ValueError("Exactly one destination must be configured")
 
     db_type = list(destinations.keys())[0]
-    db_type = update_db_type(db_type)
     db_config = destinations[db_type]
+    db_type = update_db_type(db_type)
     user = db_config.get("user")
     password = db_config.get("password")
     host = db_config.get("host")
@@ -84,3 +84,13 @@ def check_db_driver(db_uri: str) -> None:
         else:
             err += "Please install the required dependencies and try again."
         raise ModuleNotFoundError(err)
+
+
+def check_parquet_driver() -> None:
+    try:
+        import pyarrow
+    except ModuleNotFoundError:
+        raise ModuleNotFoundError(
+            "The parquet format you configured is not installed. "
+            "Please run 'pip install cloud2sql[parquet]' and try again."
+        )

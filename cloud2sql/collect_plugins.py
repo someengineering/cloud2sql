@@ -31,7 +31,10 @@ from sqlalchemy.engine import Engine
 from cloud2sql.analytics import AnalyticsEventSender
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
-from cloud2sql.parquet import ParquetModel, ParquetWriter
+try:
+    from cloud2sql.parquet import ParquetModel, ParquetWriter
+except ImportError:
+    pass
 
 
 log = getLogger("resoto.cloud2sql")
