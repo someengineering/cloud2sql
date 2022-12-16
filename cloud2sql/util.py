@@ -61,9 +61,10 @@ def db_string_from_config(config: Json) -> str:
 
 def update_db_type(db_type: str) -> str:
     if db_type == "mysql":
-        return "mysql+pymysql"
+        db_type = "mysql+pymysql"
     elif db_type == "mariadb":
-        return "mariadb+pymysql"
+        db_type = "mariadb+pymysql"
+    return db_type
 
 
 def check_db_driver(db_uri: str) -> None:
@@ -88,7 +89,7 @@ def check_db_driver(db_uri: str) -> None:
 
 def check_parquet_driver() -> None:
     try:
-        import pyarrow
+        import pyarrow  # noqa: F401
     except ModuleNotFoundError:
         raise ModuleNotFoundError(
             "The parquet format you configured is not installed. "
