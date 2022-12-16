@@ -15,8 +15,10 @@ source venv/bin/activate
 Once the virtual environment is activated, you can install cloud2sql:
 
 ```bash
-pip install cloud2sql
+pip install cloud2sql[all]
 ```
+
+If you only require support for a specific database, instead of `cloud2sql[all]` you can choose between `cloud2sql[snowflake]`, `cloud2sql[parquet]`, `cloud2sql[postgresql]`, `cloud2sql[mysql]`.
 
 ## Usage
 
