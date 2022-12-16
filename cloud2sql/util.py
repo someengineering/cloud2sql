@@ -1,6 +1,7 @@
 from typing import Union, List, Optional, Any
 
 from resotolib.types import JsonElement, Json
+from sqlalchemy.engine import create_engine
 
 
 def value_in_path(element: JsonElement, path_or_name: Union[List[str], str]) -> Optional[Any]:
@@ -26,6 +27,7 @@ def db_string_from_config(config: Json) -> str:
 
     db_type = list(destinations.keys())[0]
     db_config = destinations[db_type]
+    db_type = update_db_type(db_type)
     user = db_config.get("user")
     password = db_config.get("password")
     host = db_config.get("host")
@@ -52,4 +54,44 @@ def db_string_from_config(config: Json) -> str:
     if len(args) > 0:
         db_uri += "?" + "&".join([f"{k}={v}" for k, v in args.items()])
 
+    check_db_driver(db_uri)
+
     return db_uri
+
+
+def update_db_type(db_type: str) -> str:
+    if db_type == "mysql":
+        db_type = "mysql+pymysql"
+    elif db_type == "mariadb":
+        db_type = "mariadb+pymysql"
+    return db_type
+
+
+def check_db_driver(db_uri: str) -> None:
+    try:
+        create_engine(db_uri)
+    except ModuleNotFoundError:
+        err = "The database type you configured is not installed. "
+        if db_uri.startswith("mysql") or db_uri.startswith("mariadb"):
+            err += "Please run 'pip install cloud2sql[mysql]' and try again."
+        elif db_uri.startswith("postgresql"):
+            err += "Please run 'pip install cloud2sql[postgresql]' and try again."
+        elif db_uri.startswith("snowflake"):
+            err += "Please run 'pip install cloud2sql[snowflake]' and try again."
+        elif db_uri.startswith("mssql"):
+            err += "Please install the pymssql package and try again."
+        elif db_uri.startswith("oracle"):
+            err += "Please install the cx_oracle package and try again."
+        else:
+            err += "Please install the required dependencies and try again."
+        raise ModuleNotFoundError(err)
+
+
+def check_parquet_driver() -> None:
+    try:
+        import pyarrow  # noqa: F401
+    except ModuleNotFoundError:
+        raise ModuleNotFoundError(
+            "The parquet format you configured is not installed. "
+            "Please run 'pip install cloud2sql[parquet]' and try again."
+        )
