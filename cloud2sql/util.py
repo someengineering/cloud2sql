@@ -54,7 +54,7 @@ def db_string_from_config(config: Json) -> str:
     if len(args) > 0:
         db_uri += "?" + "&".join([f"{k}={v}" for k, v in args.items()])
 
-    check_db_type(db_uri)
+    check_db_driver(db_uri)
 
     return db_uri
 
@@ -66,7 +66,7 @@ def update_db_type(db_type: str) -> str:
         return "mariadb+pymysql"
 
 
-def check_db_type(db_uri: str) -> None:
+def check_db_driver(db_uri: str) -> None:
     try:
         create_engine(db_uri)
     except ModuleNotFoundError:
