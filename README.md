@@ -96,10 +96,22 @@ destinations:
 
 ```
 destinations:
-    parquet:
-        path: /path/to/parquet/files
+    file:
+        path: /where/to/write/parquet/files/
+        format: parquet
         batch_size: 100_000
 ```
+
+#### CSV
+
+```
+destinations:
+    file:
+        path: /where/to/write/to/csv/files/
+        format: csv
+        batch_size: 100_000
+```
+
 
 #### My database is not listed here
 
