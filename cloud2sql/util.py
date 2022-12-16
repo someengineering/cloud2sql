@@ -26,6 +26,7 @@ def db_string_from_config(config: Json) -> str:
         raise ValueError("Exactly one destination must be configured")
 
     db_type = list(destinations.keys())[0]
+    db_type = update_db_type(db_type)
     db_config = destinations[db_type]
     user = db_config.get("user")
     password = db_config.get("password")
@@ -56,6 +57,13 @@ def db_string_from_config(config: Json) -> str:
     check_db_type(db_uri)
 
     return db_uri
+
+
+def update_db_type(db_type: str) -> str:
+    if db_type == "mysql":
+        return "mysql+pymysql"
+    elif db_type == "mariadb":
+        return "mariadb+pymysql"
 
 
 def check_db_type(db_uri: str) -> None:
