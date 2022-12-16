@@ -1,6 +1,7 @@
 from resotoclient.models import Kind, Model, JsObject
-from typing import Dict, List, Any, NamedTuple, Optional, Tuple
+from typing import Dict, List, Any, NamedTuple, Optional, Tuple, final, Literal
 import pyarrow as pa
+import pyarrow.csv as csv
 from cloud2sql.schema_utils import (
     base_kinds,
     get_table_name,
@@ -11,9 +12,10 @@ from cloud2sql.schema_utils import (
 import pyarrow.parquet as pq
 from pathlib import Path
 from dataclasses import dataclass
+from abc import ABC
 
 
-class ParquetModel:
+class ArrowModel:
     def __init__(self, model: Model):
         self.model = model
         self.table_kinds = [
@@ -23,7 +25,7 @@ class ParquetModel:
         ]
         self.schemas: Dict[str, pa.Schema] = {}
 
-    def _parquet_type(self, kind: str) -> pa.lib.DataType:
+    def _pyarrow_type(self, kind: str) -> pa.lib.DataType:
         if kind.startswith("dict") or "[]" in kind:
             return pa.string()  # dicts and lists are converted to json strings
         elif kind == "int32":
@@ -49,7 +51,7 @@ class ParquetModel:
                 schema = pa.schema(
                     [
                         pa.field("_id", pa.string()),
-                        *[pa.field(p.name, self._parquet_type(p.kind)) for p in properties],
+                        *[pa.field(p.name, self._pyarrow_type(p.kind)) for p in properties],
                     ]
                 )
                 self.schemas[table_name] = schema
@@ -90,41 +92,85 @@ class WriteResult(NamedTuple):
     table_name: str
 
 
+class FileWriter(ABC):
+    pass
+
+
+@final
+@dataclass(frozen=True)
+class Parquet(FileWriter):
+    parquet_writer: pq.ParquetWriter
+
+
+@final
+@dataclass(frozen=True)
+class CSV(FileWriter):
+    csv_writer: csv.CSVWriter
+
+
+@final
 @dataclass
-class ParquetBatch:
+class ArrowBatch:
     rows: List[Dict[str, Any]]
     schema: pa.Schema
-    writer: pq.ParquetWriter
+    writer: FileWriter
 
 
-class ParquetWriter:
+def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
+    pa_table = pa.Table.from_pylist(batch.rows, batch.schema)
+    if isinstance(batch.writer, Parquet):
+        batch.writer.parquet_writer.write_table(pa_table)
+    elif isinstance(batch.writer, CSV):
+        batch.writer.csv_writer.write_table(pa_table)
+    else:
+        raise ValueError(f"Unknown format {batch.writer}")
+    return ArrowBatch(rows=[], schema=batch.schema, writer=batch.writer)
+
+
+def close_writer(batch: ArrowBatch) -> None:
+    if isinstance(batch.writer, Parquet):
+        batch.writer.parquet_writer.close()
+    elif isinstance(batch.writer, CSV):
+        batch.writer.csv_writer.close()
+    else:
+        raise ValueError(f"Unknown format {batch.writer}")
+
+
+def new_writer(
+    format: Literal["parquet", "csv"], table_name: str, schema: pa.Schema, result_dir: Path
+) -> FileWriter:
+    def ensure_path(path: Path) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    if format == "parquet":
+        return Parquet(pq.ParquetWriter(Path(ensure_path(result_dir), f"{table_name}.parquet"), schema=schema))
+    elif format == "csv":
+        return CSV(csv.CSVWriter(Path(ensure_path(result_dir), f"{table_name}.csv"), schema=schema))
+    else:
+        raise ValueError(f"Unknown format {format}")
+
+
+class ArrowWriter:
     def __init__(
-        self,
-        model: ParquetModel,
-        result_directory: Path,
-        rows_per_batch: int,
+        self, model: ArrowModel, result_directory: Path, rows_per_batch: int, output_format: Literal["parquet", "csv"]
     ):
         self.model = model
         self.kind_by_id: Dict[str, str] = {}
-        self.batches: Dict[str, ParquetBatch] = {}
-        self.rows_per_batch = rows_per_batch
-        self.result_directory = result_directory
+        self.batches: Dict[str, ArrowBatch] = {}
+        self.rows_per_batch: int = rows_per_batch
+        self.result_directory: Path = result_directory
+        self.output_format: Literal["parquet", "csv"] = output_format
 
     def insert_value(self, table_name: str, values: Any) -> Optional[WriteResult]:
         if self.model.schemas.get(table_name):
-
-            def ensure_path(path: Path) -> Path:
-                path.mkdir(parents=True, exist_ok=True)
-                return path
-
             batch = self.batches.get(
                 table_name,
-                ParquetBatch(
+                ArrowBatch(
                     [],
                     self.model.schemas[table_name],
-                    pq.ParquetWriter(
-                        Path(ensure_path(self.result_directory), f"{table_name}.parquet"),
-                        self.model.schemas[table_name],
+                    new_writer(
+                        self.output_format, table_name, self.model.schemas[table_name], self.result_directory
                     ),
                 ),
             )
@@ -133,12 +179,6 @@ class ParquetWriter:
             self.batches[table_name] = batch
             return WriteResult(table_name)
         return None
-
-    def write_batch_bundle(self, batch: ParquetBatch) -> None:
-        rows = batch.rows
-        batch.rows = []
-        pa_table = pa.Table.from_pylist(rows, batch.schema)
-        batch.writer.write_table(pa_table)
 
     def insert_node(self, node: JsObject) -> None:
         result = insert_node(
@@ -151,9 +191,10 @@ class ParquetWriter:
         should_write_batch = result and len(self.batches[result.table_name].rows) > self.rows_per_batch
         if result and should_write_batch:
             batch = self.batches[result.table_name]
-            self.write_batch_bundle(batch)
+            self.batches[result.table_name] = write_batch_to_file(batch)
 
     def close(self) -> None:
-        for batch in self.batches.values():
-            self.write_batch_bundle(batch)
-            batch.writer.close()
+        for table_name, batch in self.batches.items():
+            batch = write_batch_to_file(batch)
+            self.batches[table_name] = batch
+            close_writer(batch)

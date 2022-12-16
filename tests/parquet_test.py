@@ -1,10 +1,10 @@
 from resotoclient.models import Model
 
-from cloud2sql.parquet import ParquetModel, ParquetWriter
+from cloud2sql.parquet import ArrowModel, ArrowWriter
 
 
 def test_create_schema(model: Model) -> None:
-    parquet_model = ParquetModel(model)
+    parquet_model = ArrowModel(model)
     parquet_model.create_schema([])
 
     assert parquet_model.schemas.keys() == {"some_instance", "some_volume", "link_some_instance_some_volume"}
@@ -32,7 +32,7 @@ def test_create_schema(model: Model) -> None:
     assert set(parquet_model.schemas["link_some_instance_some_volume"].names) == {"to_id", "from_id"}
 
 
-def test_update(parquet_writer: ParquetWriter) -> None:
+def test_update(parquet_writer: ArrowWriter) -> None:
 
     parquet_writer.insert_node(  # type: ignore
         {

@@ -8,8 +8,9 @@ from logging import getLogger
 from queue import Queue
 from threading import Event
 from time import sleep
-from typing import Dict, Optional, List, Any, Tuple, Set
+from typing import Dict, Optional, List, Any, Tuple, Set, Literal
 from pathlib import Path
+from dataclasses import dataclass
 
 import pkg_resources
 import yaml
@@ -33,7 +34,7 @@ from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
 
 try:
-    from cloud2sql.parquet import ParquetModel, ParquetWriter
+    from cloud2sql.parquet import ArrowModel, ArrowWriter
 except ImportError:
     pass
 
@@ -59,7 +60,18 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
     return result
 
 
+@dataclass(frozen=True)
+class FileDestination:
+    path: Path
+    format: Literal["parquet", "csv"]
+    batch_size: int
+
+
 def configure(path_to_config: Optional[str]) -> Json:
+    def require(key: str, obj: Json, msg: str):
+        if key not in obj:
+            raise ValueError(msg)
+
     config = {}
     if path_to_config:
         with open(path_to_config) as f:
@@ -70,6 +82,16 @@ def configure(path_to_config: Optional[str]) -> Json:
     if "destinations" not in config:
         raise ValueError("No destinations configured")
 
+    if "file" in (config.get("destinations", {}) or {}):
+        file_dest = config["destinations"]["file"]
+        require("format", file_dest, "No format configured for file destination")
+        if not file_dest["format"] in ["parquet", "csv"]:
+            raise ValueError("Format must be either parquet or csv")
+        require("path", file_dest, "No path configured for file destination")
+        config["destinations"]["file"] = FileDestination(
+            Path(file_dest["path"]), file_dest["format"], int(file_dest.get("batch_size", 100_000))
+        )
+
     return config
 
 
@@ -79,7 +101,9 @@ def collect(
     if engine:
         return collect_sql(collector, engine, feedback, args)
     else:
-        return collect_parquet(collector, feedback, config)
+        if "file" not in config["destinations"]:
+            raise ValueError("No file destination configured")
+        return collect_to_file(collector, feedback, config["destinations"]["file"])
 
 
 def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
@@ -95,13 +119,15 @@ def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
     return exported
 
 
-def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, config: Json) -> Tuple[str, int, int]:
+def collect_to_file(
+    collector: BaseCollectorPlugin, feedback: CoreFeedback, config: FileDestination
+) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    model = ParquetModel(Model({k.fqn: k for k in kinds}))
+    model = ArrowModel(Model({k.fqn: k for k in kinds}))
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_current = 0
     progress_update = node_edge_count // 100
@@ -115,11 +141,7 @@ def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, conf
     # create the ddl metadata from the kinds
     model.create_schema(list(edges_by_kind))
     # ingest the data
-    parquet_conf = config.get("destinations", {}).get("parquet")
-    assert parquet_conf
-    parquet_path = Path(parquet_conf["path"])
-    parquet_batch_size = int(parquet_conf["batch_size"])
-    writer = ParquetWriter(model, parquet_path, parquet_batch_size)
+    writer = ArrowWriter(model, config.path, config.batch_size, config.format)
     node: BaseResource
     for node in sorted(collector.graph.nodes, key=lambda n: n.kind):
         exported = prepare_node(node, collector)
@@ -214,7 +236,7 @@ def collect_from_plugins(engine: Optional[Engine], args: Namespace, sender: Anal
     raw_config = configure(args.config)
     sources = raw_config["sources"]
     all_collectors = collectors(sources, feedback)
-    engine_name = engine.dialect.name if engine else "parquet"
+    engine_name = engine.dialect.name if engine else "file"
     analytics = {"total": len(all_collectors), "engine": engine_name} | {name: 1 for name in all_collectors}
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
