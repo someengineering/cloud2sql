@@ -1,6 +1,7 @@
 from typing import Union, List, Optional, Any
 
 from resotolib.types import JsonElement, Json
+from sqlalchemy.engine import create_engine
 
 
 def value_in_path(element: JsonElement, path_or_name: Union[List[str], str]) -> Optional[Any]:
@@ -52,4 +53,26 @@ def db_string_from_config(config: Json) -> str:
     if len(args) > 0:
         db_uri += "?" + "&".join([f"{k}={v}" for k, v in args.items()])
 
+    check_db_type(db_uri)
+
     return db_uri
+
+
+def check_db_type(db_uri: str) -> None:
+    try:
+        create_engine(db_uri)
+    except ModuleNotFoundError:
+        err = "The database type you configured is not installed. "
+        if db_uri.startswith("mysql") or db_uri.startswith("mariadb"):
+            err += "Please run 'pip install cloud2sql[mysql]' and try again."
+        elif db_uri.startswith("postgresql"):
+            err += "Please run 'pip install cloud2sql[postgresql]' and try again."
+        elif db_uri.startswith("snowflake"):
+            err += "Please run 'pip install cloud2sql[snowflake]' and try again."
+        elif db_uri.startswith("mssql"):
+            err += "Please install the pymssql package and try again."
+        elif db_uri.startswith("oracle"):
+            err += "Please install the cx_oracle package and try again."
+        else:
+            err += "Please install the required dependencies and try again."
+        raise ModuleNotFoundError(err)
