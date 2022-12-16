@@ -43,6 +43,7 @@ setup(
     extras_require={
         "all": required_mysql + required_postgresql + required_snowflake + required_parquet,
         "mysql": required_mysql,
+        "mariadb": required_mysql,
         "postgresql": required_postgresql,
         "snowflake": required_snowflake,
         "parquet": required_parquet,
