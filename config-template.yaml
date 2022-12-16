@@ -97,6 +97,8 @@ sources:
     # Onelogin client secret
     client_secret: null
 destinations:
+  # Define the destination to sync. 
+  # PostgreSQL is listed here as example - see README.md for a list of possible targets.
   posgresql:
     host: 127.0.0.1
     port: 5432
