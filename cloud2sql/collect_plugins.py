@@ -89,7 +89,7 @@ def configure(path_to_config: Optional[str]) -> Json:
             raise ValueError("Format must be either parquet or csv")
         require("path", file_dest, "No path configured for file destination")
         config["destinations"]["file"] = FileDestination(
-            Path(file_dest["path"]), file_dest["format"], int(file_dest.get("batch_size", 1000_000))
+            Path(file_dest["path"]), file_dest["format"], int(file_dest.get("batch_size", 100_000))
         )
 
     return config
