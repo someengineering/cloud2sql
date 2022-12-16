@@ -76,10 +76,27 @@ destinations:
             key: value
 ```
 
+#### Snowflake
+
+```
+destinations:
+    snowflake:
+        host: myorg-myaccount
+        user: cloud2sql
+        password: changeme
+        database: cloud2sql/public
+        args:
+            warehouse: compute_wh
+            role: accountadmin
+```
+
 #### Apache Parquet
 
 ```
-parquet:///path/to/parquet/directory
+destinations:
+    parquet:
+        path: /path/to/parquet/files
+        batch_size: 100_000
 ```
 
 #### My database is not listed here
