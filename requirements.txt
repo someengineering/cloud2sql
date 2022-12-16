@@ -8,6 +8,9 @@ resotoclient>=1.2.1
 posthog>=2.2.0
 requests>=2.28.1
 
+# parquet support
+pyarrow==10.0.1
+
 # bundle popular db drivers
 psycopg2-binary>=2.9.5 # postgres
 pymysql>=1.0.2 # mysql + mariadb

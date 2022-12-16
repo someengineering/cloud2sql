@@ -1,6 +1,5 @@
 from logging import getLogger
 from typing import Optional
-
 from resotolib.args import Namespace, ArgumentParser
 from resotolib.logger import setup_logger
 from sqlalchemy import create_engine
@@ -44,7 +43,7 @@ def parse_args() -> Namespace:
     return args  # type: ignore
 
 
-def collect(engine: Engine, args: Namespace, sender: AnalyticsEventSender) -> None:
+def collect(engine: Optional[Engine], args: Namespace, sender: AnalyticsEventSender) -> None:
     try:
         collect_from_plugins(engine, args, sender)
     except Exception as e:
@@ -59,7 +58,8 @@ def main() -> None:
         setup_logger("resoto.cloud2sql", level=args.log_level, force=True)
         sender = NoEventSender() if args.analytics_opt_out else PosthogEventSender()
         config = configure(args.config)
-        engine = create_engine(db_string_from_config(config))
+        is_parquet = next(iter(config["destinations"].keys()), None) == "parquet"
+        engine = None if is_parquet else create_engine(db_string_from_config(config))
         collect(engine, args, sender)
     except Exception as e:
         if args.debug:  # raise exception and show complete tracelog

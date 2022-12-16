@@ -76,6 +76,12 @@ destinations:
             key: value
 ```
 
+#### Apache Parquet
+
+```
+parquet:///path/to/parquet/directory
+```
+
 #### My database is not listed here
 
 cloud2sql uses SQLAlchemy to connect to the database. If your database is not listed here, you can check if it is supported in [SQLAlchemy Dialects](https://docs.sqlalchemy.org/en/20/dialects/index.html).

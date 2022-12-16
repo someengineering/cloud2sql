@@ -2,12 +2,14 @@ import concurrent
 import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, Future
+import concurrent.futures
 from contextlib import suppress
 from logging import getLogger
 from queue import Queue
 from threading import Event
 from time import sleep
-from typing import Dict, Optional, List, Any, Tuple
+from typing import Dict, Optional, List, Any, Tuple, Set
+from pathlib import Path
 
 import pkg_resources
 import yaml
@@ -25,9 +27,12 @@ from rich import print as rich_print
 from rich.live import Live
 from sqlalchemy.engine import Engine
 
+
 from cloud2sql.analytics import AnalyticsEventSender
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
+from cloud2sql.parquet import ParquetModel, ParquetWriter
+
 
 log = getLogger("resoto.cloud2sql")
 
@@ -65,6 +70,73 @@ def configure(path_to_config: Optional[str]) -> Json:
 
 
 def collect(
+    collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, args: Namespace, config: Json
+) -> Tuple[str, int, int]:
+    if engine:
+        return collect_sql(collector, engine, feedback, args)
+    else:
+        return collect_parquet(collector, feedback, config)
+
+
+def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
+    node._graph = collector.graph
+    exported = node_to_dict(node)
+    exported["type"] = "node"
+    exported["ancestors"] = {
+        "cloud": {"reported": {"id": node.cloud().name}},
+        "account": {"reported": {"id": node.account().name}},
+        "region": {"reported": {"id": node.region().name}},
+        "zone": {"reported": {"id": node.zone().name}},
+    }
+    return exported
+
+
+def collect_parquet(collector: BaseCollectorPlugin, feedback: CoreFeedback, config: Json) -> Tuple[str, int, int]:
+    # collect cloud data
+    feedback.progress_done(collector.cloud, 0, 1)
+    collector.collect()
+    # read the kinds created from this collector
+    kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
+    model = ParquetModel(Model({k.fqn: k for k in kinds}))
+    node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
+    ne_current = 0
+    progress_update = node_edge_count // 100
+    feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
+
+    # group all edges by kind of from/to
+    edges_by_kind: Set[Tuple[str, str]] = set()
+    for from_node, to_node, key in collector.graph.edges:
+        if key.edge_type == EdgeType.default:
+            edges_by_kind.add((from_node.kind, to_node.kind))
+    # create the ddl metadata from the kinds
+    model.create_schema(list(edges_by_kind))
+    # ingest the data
+    parquet_conf = config.get("destinations", {}).get("parquet")
+    assert parquet_conf
+    parquet_path = Path(parquet_conf["path"])
+    parquet_batch_size = int(parquet_conf["batch_size"])
+    writer = ParquetWriter(model, parquet_path, parquet_batch_size)
+    node: BaseResource
+    for node in sorted(collector.graph.nodes, key=lambda n: n.kind):
+        exported = prepare_node(node, collector)
+        writer.insert_node(exported)
+        ne_current += 1
+        if ne_current % progress_update == 0:
+            feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
+    for from_node, to_node, key in collector.graph.edges:
+        if key.edge_type == EdgeType.default:
+            writer.insert_node({"from": from_node.chksum, "to": to_node.chksum, "type": "edge"})
+            ne_current += 1
+            if ne_current % progress_update == 0:
+                feedback.progress_done("sync_db", ne_current, node_edge_count, context=[collector.cloud])
+
+    writer.close()
+
+    feedback.progress_done(collector.cloud, 1, 1)
+    return collector.cloud, len(collector.graph.nodes), len(collector.graph.edges)
+
+
+def collect_sql(
     collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, args: Namespace
 ) -> Tuple[str, int, int]:
     # collect cloud data
@@ -75,16 +147,8 @@ def collect(
     nodes_by_kind: Dict[str, List[Json]] = defaultdict(list)
     node: BaseResource
     for node in collector.graph.nodes:
-        node._graph = collector.graph
         # create an exported node with the same scheme as resotocore
-        exported = node_to_dict(node)
-        exported["type"] = "node"
-        exported["ancestors"] = {
-            "cloud": {"reported": {"id": node.cloud().name}},
-            "account": {"reported": {"id": node.account().name}},
-            "region": {"reported": {"id": node.region().name}},
-            "zone": {"reported": {"id": node.zone().name}},
-        }
+        exported = prepare_node(node, collector)
         nodes_by_kind[node.kind].append(exported)
 
     # group all edges by kind of from/to
@@ -138,7 +202,7 @@ def show_messages(core_messages: Queue[Json], end: Event) -> None:
         rich_print(message)
 
 
-def collect_from_plugins(engine: Engine, args: Namespace, sender: AnalyticsEventSender) -> None:
+def collect_from_plugins(engine: Optional[Engine], args: Namespace, sender: AnalyticsEventSender) -> None:
     # the multiprocessing manager is used to share data between processes
     mp_manager = multiprocessing.Manager()
     core_messages: Queue[Json] = mp_manager.Queue()
@@ -146,7 +210,8 @@ def collect_from_plugins(engine: Engine, args: Namespace, sender: AnalyticsEvent
     raw_config = configure(args.config)
     sources = raw_config["sources"]
     all_collectors = collectors(sources, feedback)
-    analytics = {"total": len(all_collectors), "engine": engine.dialect.name} | {name: 1 for name in all_collectors}
+    engine_name = engine.dialect.name if engine else "parquet"
+    analytics = {"total": len(all_collectors), "engine": engine_name} | {name: 1 for name in all_collectors}
     end = Event()
     with ThreadPoolExecutor(max_workers=4) as executor:
         try:
@@ -154,17 +219,18 @@ def collect_from_plugins(engine: Engine, args: Namespace, sender: AnalyticsEvent
                 executor.submit(show_messages, core_messages, end)
             futures: List[Future[Any]] = []
             for collector in all_collectors.values():
-                futures.append(executor.submit(collect, collector, engine, feedback, args))
+                futures.append(executor.submit(collect, collector, engine, feedback, args, raw_config))
             for future in concurrent.futures.as_completed(futures):
                 name, nodes, edges = future.result()
                 analytics[f"{name}_nodes"] = nodes
                 analytics[f"{name}_edges"] = edges
             sender.capture("collect", **analytics)
             # when all collectors are done, we can swap all temp tables
-            swap_tables = "Make latest snapshot available"
-            feedback.progress_done(swap_tables, 0, 1)
-            SqlUpdater.swap_temp_tables(engine)
-            feedback.progress_done(swap_tables, 1, 1)
+            if engine:
+                swap_tables = "Make latest snapshot available"
+                feedback.progress_done(swap_tables, 0, 1)
+                SqlUpdater.swap_temp_tables(engine)
+                feedback.progress_done(swap_tables, 1, 1)
         except Exception as e:
             # set end and wait for live to finish, otherwise the cursor is not reset
             end.set()

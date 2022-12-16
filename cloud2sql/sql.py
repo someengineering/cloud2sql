@@ -1,12 +1,9 @@
-import inspect
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Any, Type, Tuple, Dict, Iterator
 
-from resotoclient.models import Kind, Model, Property
-from resotolib import baseresources
+from resotoclient.models import Kind, Model
 from resotolib.args import Namespace
-from resotolib.baseresources import BaseResource
 from resotolib.types import Json
 from sqlalchemy import Boolean, Column, Float, Integer, JSON, MetaData, String, Table, DDL
 from sqlalchemy.engine import Engine, Connection
@@ -14,24 +11,16 @@ from sqlalchemy.sql.ddl import DropTable, DropConstraint
 from sqlalchemy.sql.dml import ValuesBase
 
 from cloud2sql.util import value_in_path
+from cloud2sql.schema_utils import (
+    base_kinds,
+    temp_prefix,
+    carz_access,
+    get_table_name,
+    get_link_table_name,
+    kind_properties,
+)
 
 log = logging.getLogger("resoto.cloud2sql")
-
-# This set will hold the names of all "base" resources
-# Since that are abstract classes, there will be no instances of them - hence we do not need a table for them.
-base_kinds = {
-    clazz.kind for _, clazz in inspect.getmembers(baseresources, inspect.isclass) if issubclass(clazz, BaseResource)
-}
-
-temp_prefix = "tmp_"
-
-carz = [
-    Property("cloud", "string"),
-    Property("account", "string"),
-    Property("region", "string"),
-    Property("zone", "string"),
-]
-carz_access = {name: ["ancestors", name, "reported", "id"] for name in ["cloud", "account", "region", "zone"]}
 
 
 def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEngine[Any]]
@@ -107,49 +96,15 @@ class SqlDefaultUpdater(SqlUpdater):
         self.column_types_fn = kwargs.get("kind_to_column_type", sql_kind_to_column_type)
         self.insert_batch_size = kwargs.get("insert_batch_size", 5000)
 
-    def table_name(self, kind: str, with_tmp_prefix: bool = True) -> str:
-        replaced = kind.replace(".", "_")
-        return temp_prefix + replaced if with_tmp_prefix else replaced
-
-    def link_table_name(self, from_kind: str, to_kind: str, with_tmp_prefix: bool = True) -> str:
-        # postgres table names are not allowed to be longer than 63 characters
-        replaced = f"link_{self.table_name(from_kind, False)[0:25]}_{self.table_name(to_kind, False)[0:25]}"
-        return temp_prefix + replaced if with_tmp_prefix else replaced
-
-    def kind_properties(self, kind: Kind) -> Tuple[List[Property], List[str]]:
-        visited = set()
-
-        def base_props_not_visited(kd: Kind) -> Tuple[List[Property], List[str]]:
-            if kd.fqn in visited:
-                return [], []
-            visited.add(kd.fqn)
-            # take all properties that are not synthetic
-            # also ignore the kind property, since it is available in the table name
-            properties: Dict[str, Property] = {
-                prop.name: prop for prop in (kd.properties or []) if prop.synthetic is None and prop.name != "kind"
-            }
-            defaults = kd.successor_kinds.get("default") if kd.successor_kinds else None
-            successors: List[str] = defaults.copy() if defaults else []
-            for kind_name in kd.bases or []:
-                if ck := self.model.kinds.get(kind_name):  # and kind_name != "resource":
-                    props, succs = base_props_not_visited(ck)
-                    for prop in props:
-                        properties[prop.name] = prop
-                    successors.extend(succs)
-            return list(properties.values()), successors
-
-        prs, scs = base_props_not_visited(kind)
-        return prs + carz, scs
-
     def create_schema(self, connection: Connection, args: Namespace, edges: List[Tuple[str, str]]) -> MetaData:
         log.info(f"Create schema for {len(self.table_kinds)} kinds and their relationships")
 
         def table_schema(kind: Kind) -> None:
-            table_name = self.table_name(kind.fqn)
+            table_name = get_table_name(kind.fqn)
             if table_name not in self.metadata.tables:
-                properties, _ = self.kind_properties(kind)
+                properties, _ = kind_properties(kind, self.model)
                 Table(
-                    self.table_name(kind.fqn),
+                    get_table_name(kind.fqn),
                     self.metadata,
                     *[
                         Column("_id", String, primary_key=True),
@@ -158,9 +113,9 @@ class SqlDefaultUpdater(SqlUpdater):
                 )
 
         def link_table_schema(from_kind: str, to_kind: str) -> None:
-            from_table = self.table_name(from_kind)
-            to_table = self.table_name(to_kind)
-            link_table = self.link_table_name(from_kind, to_kind)
+            from_table = get_table_name(from_kind)
+            to_table = get_table_name(to_kind)
+            link_table = get_link_table_name(from_kind, to_kind)
             if (
                 link_table not in self.metadata.tables
                 and from_table in self.metadata.tables
@@ -171,7 +126,7 @@ class SqlDefaultUpdater(SqlUpdater):
                 Table(link_table, self.metadata, Column("from_id", String), Column("to_id", String))
 
         def link_table_schema_from_successors(kind: Kind) -> None:
-            _, successors = self.kind_properties(kind)
+            _, successors = kind_properties(kind, self.model)
             # create link table for all linked entities
             for successor in successors:
                 link_table_schema(kind.fqn, successor)
@@ -210,17 +165,17 @@ class SqlDefaultUpdater(SqlUpdater):
 
     def insert_nodes(self, kind: str, nodes: List[Json]) -> Iterator[ValuesBase]:
         # create a defaults dict with all properties set to None
-        kp, _ = self.kind_properties(self.model.kinds[kind])
+        kp, _ = kind_properties(self.model.kinds[kind], self.model)
         defaults = {p.name: None for p in kp}
 
-        if (table := self.metadata.tables.get(self.table_name(kind))) is not None:
+        if (table := self.metadata.tables.get(get_table_name(kind))) is not None:
             for batch in (nodes[i : i + self.insert_batch_size] for i in range(0, len(nodes), self.insert_batch_size)):
                 converted = [defaults | self.node_to_json(node) for node in batch]
                 yield table.insert().values(converted)
 
     def insert_edges(self, from_to: Tuple[str, str], nodes: List[Json]) -> Iterator[ValuesBase]:
         from_kind, to_kind = from_to
-        table = self.metadata.tables.get(self.link_table_name(from_kind, to_kind))
+        table = self.metadata.tables.get(get_link_table_name(from_kind, to_kind))
         maybe_insert = table.insert() if table is not None else None
         if maybe_insert is not None:
             for batch in (nodes[i : i + self.insert_batch_size] for i in range(0, len(nodes), self.insert_batch_size)):

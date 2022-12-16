@@ -13,6 +13,8 @@ from sqlalchemy.sql.dml import ValuesBase
 
 from cloud2sql.sql import SqlDefaultUpdater, DialectUpdater
 
+from cloud2sql.schema_utils import kind_properties, get_table_name
+
 log = logging.getLogger("resoto.cloud2sql.snowflake")
 
 
@@ -59,7 +61,7 @@ class SnowflakeUpdater(SqlDefaultUpdater):
         self.column_types_fn = kind_to_snowflake_type
 
     def insert_nodes(self, kind: str, nodes: List[Json]) -> Iterator[ValuesBase]:
-        kp, _ = self.kind_properties(self.model.kinds[kind])
+        kp, _ = kind_properties(self.model.kinds[kind], self.model)
         kind_props = [Property("_id", "string")] + kp
         select_array = []
         column_definitions = []
@@ -83,7 +85,7 @@ class SnowflakeUpdater(SqlDefaultUpdater):
             # make sure to use the same order as in select_array
             return [json.dumps(nj.get(p.name)) if prop_is_json.get(p.name) else nj.get(p.name) for p in kind_props]
 
-        if (table := self.metadata.tables.get(self.table_name(kind))) is not None:
+        if (table := self.metadata.tables.get(get_table_name(kind))) is not None:
             for batch in (nodes[i : i + self.insert_batch_size] for i in range(0, len(nodes), self.insert_batch_size)):
                 converted = [values_tuple(node) for node in batch]
                 yield table.insert().from_select(select_array, select(Values(*column_definitions).data(converted)))
