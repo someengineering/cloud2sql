@@ -61,11 +61,11 @@ jobs:
         run: |
           python3 -m venv venv
           source venv/bin/activate
-          pip install -r requirements.txt
-          pip install -r requirements-mysql.txt
-          pip install -r requirements-postgresql.txt
-          pip install -r requirements-parquet.txt
-          pip install -r requirements-snowflake.txt
+          pip install -r requirements.txt \
+                      -r requirements-mysql.txt \
+                      -r requirements-postgresql.txt \
+                      -r requirements-parquet.txt \
+                      -r requirements-snowflake.txt
           pip install pyinstaller
           pyinstaller --clean --noconfirm --log-level=WARN --distpath=dist --workpath=build cloud2sql.spec
           if [ "${{ github.ref_type }}" = tag ]; then
