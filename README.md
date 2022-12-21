@@ -200,6 +200,8 @@ The example uses our AWS default credentials and the default kubernetes config.
 cloud2sql --config config-example.yaml
 ```
 
+For a more in-depth example, check out our [blog post](https://resoto.com/blog/2022/12/21/installing-cloud2sql).
+
 ## Local Development
 
 Create a local development environment with the following command:
