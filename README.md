@@ -1,5 +1,5 @@
 # Cloud2SQL
-Read infrastructure data from your cloud and export it to a SQL database.
+Read infrastructure data from your cloud ☁️ and export it to a SQL database 📋.
 
 ![Cloud2SQL](misc/cloud2sql.gif)
 
