@@ -12,9 +12,10 @@ from cloud2sql.schema_utils import (
 import pyarrow.parquet as pq
 from pathlib import Path
 from dataclasses import dataclass
+import dataclasses
 from abc import ABC
 from copy import deepcopy
-
+import json
 
 class ArrowModel:
     def __init__(self, model: Model):
@@ -132,49 +133,96 @@ class ArrowBatch:
     writer: FileWriter
 
 
+class ConversionTarget(ABC):
+    pass
+
+
+@final
+@dataclass(frozen=True)
+class ParquetMap(ConversionTarget):
+    convert_values_to_str: bool
+
+
+@final
+@dataclass(frozen=True)
+class ParquetString(ConversionTarget):
+    pass
+
+
+@dataclass
+class NormalizationPath:
+    path: List[str]
+    convert_to: ConversionTarget
+
+
 def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
 
     copy = deepcopy(batch.rows)
 
     # workaround until fix is merged https://issues.apache.org/jira/browse/ARROW-17832
-    def collect_paths_to_maps(schema: pa.Schema) -> List[List[str]]:
-        paths: List[List[str]] = []
+    def collect_normalization_paths(schema: pa.Schema) -> List[NormalizationPath]:
+        paths: List[NormalizationPath] = []
 
         def collect_paths_to_maps_helper(path: List[str], typ: pa.DataType) -> None:
+            # if we see a map, we remember it for the conversion
+            # if the value type is string, then we stop further traversing
             if isinstance(typ, pa.lib.MapType):
-                paths.append(path)
-                collect_paths_to_maps_helper(path, typ.item_type)
+                stringify_items = pa.types.is_string(typ.item_type)
+                normalization_path = NormalizationPath(path, ParquetMap(stringify_items))
+                paths.append(normalization_path)
+                if not stringify_items:
+                    collect_paths_to_maps_helper(path, typ.item_type)
             elif isinstance(typ, pa.lib.StructType):
                 for field_idx in range(0, typ.num_fields):
                     field = typ.field(field_idx)
                     collect_paths_to_maps_helper(path + [field.name], field.type)
             elif isinstance(typ, pa.lib.ListType):
                 collect_paths_to_maps_helper(path, typ.value_type)
+            elif pa.types.is_string(typ):
+                normalization_path = NormalizationPath(path, ParquetString())
+                paths.append(normalization_path)
 
         for idx, typ in enumerate(schema.types):
             collect_paths_to_maps_helper([schema.names[idx]], typ)
 
         return paths
 
-    def convert_dict(path: List[str], obj: Any) -> Any:
-        if isinstance(obj, dict):
-            if len(path) == 0:
-                return list(obj.items())
-            else:
+    def normalize(npath: NormalizationPath, obj: Any) -> Any:
+        path = npath.path
+        reached_target = len(path) == 0
+
+        if reached_target:
+            if isinstance(npath.convert_to, ParquetString):
+                return obj if isinstance(obj, str) else json.dumps(obj)
+            elif isinstance(npath.convert_to, ParquetMap):
+                if not isinstance(obj, dict):
+                    raise Exception(f"Expected dict, got {type(obj)}. path: {npath}")
+                
+                def value_to_string(v: Any) -> str:
+                    if isinstance(v, str):
+                        return v
+                    else:
+                        return json.dumps(v)
+
+                if npath.convert_to.convert_values_to_str:
+                    return [(k, value_to_string(v)) for k, v in obj.items()]
+                else:
+                    return list(obj.items())
+        else:
+            if isinstance(obj, dict):
                 key = path[0]
                 if key in obj:
-                    obj[key] = convert_dict(path[1:], obj[key])
+                    new_npath = dataclasses.replace(npath, path=path[1:])
+                    obj[key] = normalize(new_npath, obj[key])
                 return obj
-        elif isinstance(obj, list):
-            return [convert_dict(path, v) for v in obj]
-        else:
-            return obj
+            elif isinstance(obj, list):
+                return [normalize(npath, v) for v in obj]
 
-    paths_to_maps = collect_paths_to_maps(batch.schema)
+    to_normalize = collect_normalization_paths(batch.schema)
 
     for row in batch.rows:
-        for path in paths_to_maps:
-            convert_dict(path, row)
+        for path in to_normalize:
+            normalize(path, row)
 
     pa_table = pa.Table.from_pylist(batch.rows, batch.schema)
     if isinstance(batch.writer, Parquet):
