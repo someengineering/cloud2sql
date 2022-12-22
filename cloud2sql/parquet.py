@@ -13,6 +13,7 @@ import pyarrow.parquet as pq
 from pathlib import Path
 from dataclasses import dataclass
 from abc import ABC
+from copy import deepcopy
 
 
 class ArrowModel:
@@ -26,8 +27,11 @@ class ArrowModel:
         self.schemas: Dict[str, pa.Schema] = {}
 
     def _pyarrow_type(self, kind: str) -> pa.lib.DataType:
-        if kind.startswith("dict") or "[]" in kind:
-            return pa.string()  # dicts and lists are converted to json strings
+        if "[]" in kind:
+            return pa.list_(self._pyarrow_type(kind.strip("[]")))
+        elif kind.startswith("dictionary"):
+            (key_kind, value_kind) = kind.strip("dictionary").strip("[]").split(",")
+            return pa.map_(self._pyarrow_type(key_kind.strip()), self._pyarrow_type(value_kind.strip()))
         elif kind == "int32":
             return pa.int32()
         elif kind == "int64":
@@ -36,12 +40,24 @@ class ArrowModel:
             pa.float32()
         elif kind == "double":
             return pa.float64()
-        elif kind in {"string", "datetime", "date", "duration"}:
+        elif kind in {"string", "datetime", "date", "duration", "any"}:
             return pa.string()
         elif kind == "boolean":
             return pa.bool_()
+        elif kind in self.model.kinds:
+            nested_kind = self.model.kinds[kind]
+            if nested_kind.runtime_kind is not None:
+                return self._pyarrow_type(nested_kind.runtime_kind)
+
+            properties, _ = kind_properties(nested_kind, self.model)
+            return pa.struct(
+                [
+                    pa.field(p.name, self._pyarrow_type(p.kind))
+                    for p in properties
+                ]
+            )
         else:
-            return pa.string()
+            raise Exception(f"Unknown kind {kind}")
 
     def create_schema(self, edges: List[Tuple[str, str]]) -> None:
         def table_schema(kind: Kind) -> None:
@@ -117,6 +133,49 @@ class ArrowBatch:
 
 
 def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
+
+    copy = deepcopy(batch.rows)
+
+    # workaround until fix is merged https://issues.apache.org/jira/browse/ARROW-17832
+    def collect_paths_to_maps(schema: pa.Schema) -> List[List[str]]:
+        paths: List[List[str]] = []
+
+        def collect_paths_to_maps_helper(path: List[str], typ: pa.DataType) -> None:
+            if isinstance(typ, pa.lib.MapType):
+                paths.append(path)
+                collect_paths_to_maps_helper(path, typ.item_type)
+            elif isinstance(typ, pa.lib.StructType):
+                for field_idx in range(0, typ.num_fields):
+                    field = typ.field(field_idx)
+                    collect_paths_to_maps_helper(path + [field.name], field.type)
+            elif isinstance(typ, pa.lib.ListType):
+                collect_paths_to_maps_helper(path, typ.value_type)
+
+        for idx, typ in enumerate(schema.types):
+            collect_paths_to_maps_helper([schema.names[idx]], typ)
+
+        return paths
+
+    def convert_dict(path: List[str], obj: Any) -> Any:
+        if isinstance(obj, dict):
+            if len(path) == 0:
+                return list(obj.items())
+            else:
+                key = path[0]
+                if key in obj:
+                    obj[key] = convert_dict(path[1:], obj[key])
+                return obj
+        elif isinstance(obj, list):
+            return [convert_dict(path, v) for v in obj]
+        else:
+            return obj
+
+    paths_to_maps = collect_paths_to_maps(batch.schema)
+
+    for row in batch.rows:
+        for path in paths_to_maps:
+            convert_dict(path, row)
+
     pa_table = pa.Table.from_pylist(batch.rows, batch.schema)
     if isinstance(batch.writer, Parquet):
         batch.writer.parquet_writer.write_table(pa_table)
@@ -162,12 +221,15 @@ class ArrowWriter:
 
     def insert_value(self, table_name: str, values: Any) -> Optional[WriteResult]:
         if self.model.schemas.get(table_name):
+            schema = self.model.schemas[table_name]
             batch = self.batches.get(
                 table_name,
                 ArrowBatch(
                     [],
-                    self.model.schemas[table_name],
-                    new_writer(self.output_format, table_name, self.model.schemas[table_name], self.result_directory),
+                    schema,
+                    new_writer(
+                        self.output_format, table_name, schema, self.result_directory
+                    ),
                 ),
             )
 
@@ -182,7 +244,6 @@ class ArrowWriter:
             self.kind_by_id,
             self.insert_value,
             with_tmp_prefix=False,
-            flatten=True,
         )
         should_write_batch = result and len(self.batches[result.table_name].rows) > self.rows_per_batch
         if result and should_write_batch:
