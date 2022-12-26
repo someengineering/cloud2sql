@@ -17,6 +17,7 @@ from abc import ABC
 from copy import deepcopy
 import json
 
+
 class ArrowModel:
     def __init__(self, model: Model):
         self.model = model
@@ -128,6 +129,7 @@ class CSV(FileWriter):
 @final
 @dataclass
 class ArrowBatch:
+    table_name: str
     rows: List[Dict[str, Any]]
     schema: pa.Schema
     writer: FileWriter
@@ -151,7 +153,7 @@ class ParquetString(ConversionTarget):
 
 @dataclass
 class NormalizationPath:
-    path: List[str]
+    path: List[Optional[str]]
     convert_to: ConversionTarget
 
 
@@ -160,28 +162,37 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
     copy = deepcopy(batch.rows)
 
     # workaround until fix is merged https://issues.apache.org/jira/browse/ARROW-17832
+    #
+    # here we collect the paths to the JSON object fields that we want to convert to arrow types
+    # so that later we will do the transformations
+    #
+    # currently we do dict -> list[(key, value)] and converting values which are defined as strings
+    # in the scheme to strings/json strings
     def collect_normalization_paths(schema: pa.Schema) -> List[NormalizationPath]:
         paths: List[NormalizationPath] = []
 
-        def collect_paths_to_maps_helper(path: List[str], typ: pa.DataType) -> None:
-            # if we see a map, we remember it for the conversion
-            # if the value type is string, then we stop further traversing
+        def collect_paths_to_maps_helper(path: List[Optional[str]], typ: pa.DataType) -> None:
+            # if we see a map, then full stop. we add the path to the list
+            # if the value type is string, we remember that too
             if isinstance(typ, pa.lib.MapType):
                 stringify_items = pa.types.is_string(typ.item_type)
                 normalization_path = NormalizationPath(path, ParquetMap(stringify_items))
                 paths.append(normalization_path)
-                if not stringify_items:
-                    collect_paths_to_maps_helper(path, typ.item_type)
+            # structs are traversed but they have no interest for us
             elif isinstance(typ, pa.lib.StructType):
                 for field_idx in range(0, typ.num_fields):
                     field = typ.field(field_idx)
                     collect_paths_to_maps_helper(path + [field.name], field.type)
+            # the lists traversed too. None will is added to the path to be consumed by the recursion
+            # in order to reach the correct level
             elif isinstance(typ, pa.lib.ListType):
-                collect_paths_to_maps_helper(path, typ.value_type)
+                collect_paths_to_maps_helper(path + [None], typ.value_type)
+            # if we see a string, then we stop and add a path to the list
             elif pa.types.is_string(typ):
                 normalization_path = NormalizationPath(path, ParquetString())
                 paths.append(normalization_path)
 
+        # bootstrap the recursion
         for idx, typ in enumerate(schema.types):
             collect_paths_to_maps_helper([schema.names[idx]], typ)
 
@@ -191,10 +202,13 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
         path = npath.path
         reached_target = len(path) == 0
 
+        # we're on the correct node, time to convert it into something
         if reached_target:
             if isinstance(npath.convert_to, ParquetString):
+                # everything that should be a string is either a string or a json string
                 return obj if isinstance(obj, str) else json.dumps(obj)
             elif isinstance(npath.convert_to, ParquetMap):
+                # we can only convert dicts to maps. if it is not the case then it is a bug
                 if not isinstance(obj, dict):
                     raise Exception(f"Expected dict, got {type(obj)}. path: {npath}")
                 
@@ -203,20 +217,31 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
                         return v
                     else:
                         return json.dumps(v)
-
+                # in case the map should contain string values, we convert them to strings
                 if npath.convert_to.convert_values_to_str:
                     return [(k, value_to_string(v)) for k, v in obj.items()]
                 else:
                     return list(obj.items())
+        # we're not at the target node yet, so we traverse the tree deeper
         else:
+            # if we see a dict, we try to go deeper in case it contains the key we are looking for
+            # otherwise we return the object as is. This is valid because the fields are optional
             if isinstance(obj, dict):
                 key = path[0]
                 if key in obj:
+                    # consume the current element of the path
                     new_npath = dataclasses.replace(npath, path=path[1:])
                     obj[key] = normalize(new_npath, obj[key])
                 return obj
+            # in case of a list, we process all its elements
             elif isinstance(obj, list):
-                return [normalize(npath, v) for v in obj]
+                # check that the path is correct
+                assert path[0] is None
+                # consume the current element of the path
+                new_npath = dataclasses.replace(npath, path=path[1:])
+                return [normalize(new_npath, v) for v in obj]
+            else:
+                raise Exception(f"Unexpected object type {type(obj)}, path: {npath}")
 
     to_normalize = collect_normalization_paths(batch.schema)
 
@@ -231,7 +256,7 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
         batch.writer.csv_writer.write_table(pa_table)
     else:
         raise ValueError(f"Unknown format {batch.writer}")
-    return ArrowBatch(rows=[], schema=batch.schema, writer=batch.writer)
+    return ArrowBatch(table_name=batch.table_name, rows=[], schema=batch.schema, writer=batch.writer)
 
 
 def close_writer(batch: ArrowBatch) -> None:
@@ -273,6 +298,7 @@ class ArrowWriter:
             batch = self.batches.get(
                 table_name,
                 ArrowBatch(
+                    table_name,
                     [],
                     schema,
                     new_writer(
