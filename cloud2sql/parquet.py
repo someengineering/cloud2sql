@@ -19,7 +19,7 @@ import json
 
 
 class ArrowModel:
-    def __init__(self, model: Model):
+    def __init__(self, model: Model, output_format: Literal["parquet", "csv"]):
         self.model = model
         self.table_kinds = [
             kind
@@ -27,11 +27,19 @@ class ArrowModel:
             if kind.aggregate_root and kind.runtime_kind is None and kind.fqn not in base_kinds
         ]
         self.schemas: Dict[str, pa.Schema] = {}
+        self.output_format: Literal["parquet", "csv"] = output_format
 
     def _pyarrow_type(self, kind: str) -> pa.lib.DataType:
         if "[]" in kind:
+            #  csv does not support lists
+            if self.output_format == "csv":
+                return pa.string()
             return pa.list_(self._pyarrow_type(kind.strip("[]")))
         elif kind.startswith("dictionary"):
+            #  csv does not support dictionaries
+            if self.output_format == "csv":
+                return pa.string()
+
             (key_kind, value_kind) = kind.strip("dictionary").strip("[]").split(",")
             return pa.map_(self._pyarrow_type(key_kind.strip()), self._pyarrow_type(value_kind.strip()))
         elif kind == "int32":
@@ -47,6 +55,10 @@ class ArrowModel:
         elif kind == "boolean":
             return pa.bool_()
         elif kind in self.model.kinds:
+            #  csv does not support fancy types
+            if self.output_format == "csv":
+                return pa.string()
+
             nested_kind = self.model.kinds[kind]
             if nested_kind.runtime_kind is not None:
                 return self._pyarrow_type(nested_kind.runtime_kind)

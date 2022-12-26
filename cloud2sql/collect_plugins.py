@@ -127,7 +127,7 @@ def collect_to_file(
     collector.collect()
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    model = ArrowModel(Model({k.fqn: k for k in kinds}))
+    model = ArrowModel(Model({k.fqn: k for k in kinds}), config.format)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_current = 0
     progress_update = node_edge_count // 100

@@ -70,7 +70,7 @@ def updater(model: Model) -> SqlDefaultUpdater:
 
 @fixture()
 def parquet_writer(model: Model):
-    parquet_model = ArrowModel(model)
+    parquet_model = ArrowModel(model, "parquet")
     parquet_model.create_schema([])
 
     p = Path(f"test_parquet_{uuid.uuid4()}")
