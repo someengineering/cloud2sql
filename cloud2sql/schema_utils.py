@@ -5,7 +5,6 @@ from resotoclient.models import Property, Kind, JsObject, Model
 from resotolib.types import Json
 from typing import List, Dict, Tuple, Optional, Any, Callable, TypeVar
 from cloud2sql.util import value_in_path
-import json
 
 # This set will hold the names of all "base" resources
 # Since that are abstract classes, there will be no instances of them - hence we do not need a table for them.

@@ -14,7 +14,6 @@ from pathlib import Path
 from dataclasses import dataclass
 import dataclasses
 from abc import ABC
-from copy import deepcopy
 import json
 
 
@@ -64,12 +63,7 @@ class ArrowModel:
                 return self._pyarrow_type(nested_kind.runtime_kind)
 
             properties, _ = kind_properties(nested_kind, self.model)
-            return pa.struct(
-                [
-                    pa.field(p.name, self._pyarrow_type(p.kind))
-                    for p in properties
-                ]
-            )
+            return pa.struct([pa.field(p.name, self._pyarrow_type(p.kind)) for p in properties])
         else:
             raise Exception(f"Unknown kind {kind}")
 
@@ -171,8 +165,6 @@ class NormalizationPath:
 
 def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
 
-    copy = deepcopy(batch.rows)
-
     # workaround until fix is merged https://issues.apache.org/jira/browse/ARROW-17832
     #
     # here we collect the paths to the JSON object fields that we want to convert to arrow types
@@ -223,12 +215,13 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
                 # we can only convert dicts to maps. if it is not the case then it is a bug
                 if not isinstance(obj, dict):
                     raise Exception(f"Expected dict, got {type(obj)}. path: {npath}")
-                
+
                 def value_to_string(v: Any) -> str:
                     if isinstance(v, str):
                         return v
                     else:
                         return json.dumps(v)
+
                 # in case the map should contain string values, we convert them to strings
                 if npath.convert_to.convert_values_to_str:
                     return [(k, value_to_string(v)) for k, v in obj.items()]
@@ -313,9 +306,7 @@ class ArrowWriter:
                     table_name,
                     [],
                     schema,
-                    new_writer(
-                        self.output_format, table_name, schema, self.result_directory
-                    ),
+                    new_writer(self.output_format, table_name, schema, self.result_directory),
                 ),
             )
 
