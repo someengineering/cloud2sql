@@ -1,35 +1,22 @@
-#!/usr/bin/env python
-
-"""The setup script."""
-
 from setuptools import setup, find_packages
-
+import os
+import pkg_resources
 import cloud2sql
 
-with open("requirements.txt") as f:
-    required = f.read().splitlines()
 
-with open("requirements-mysql.txt") as f:
-    required_mysql = f.read().splitlines()
+def read(file_name: str) -> str:
+    with open(os.path.join(os.path.dirname(__file__), file_name)) as of:
+        return of.read()
 
-with open("requirements-postgresql.txt") as f:
-    required_postgresql = f.read().splitlines()
 
-with open("requirements-parquet.txt") as f:
-    required_parquet = f.read().splitlines()
+def read_requirements(fname):
+    return [str(requirement) for requirement in pkg_resources.parse_requirements(read(fname))]
 
-with open("requirements-snowflake.txt") as f:
-    required_snowflake = f.read().splitlines()
 
-with open("requirements-test.txt") as f:
-    test_required = f.read().splitlines()
-
-with open("README.md") as f:
-    readme = f.read()
-
-setup_requirements = [
-    "pytest-runner",
-]
+required_mysql = read_requirements("requirements-mysql.txt")
+required_postgresql = read_requirements("requirements-postgresql.txt")
+required_snowflake = read_requirements("requirements-snowflake.txt")
+required_parquet = read_requirements("requirements-parquet.txt")
 
 
 setup(
@@ -39,7 +26,7 @@ setup(
     python_requires=">=3.9",
     classifiers=["Programming Language :: Python :: 3"],
     entry_points={"console_scripts": ["cloud2sql=cloud2sql.__main__:main"]},
-    install_requires=required,
+    install_requires=read_requirements("requirements.txt"),
     extras_require={
         "all": required_mysql + required_postgresql + required_snowflake + required_parquet,
         "mysql": required_mysql,
@@ -49,12 +36,12 @@ setup(
         "parquet": required_parquet,
     },
     license="Apache Software License 2.0",
-    long_description=readme,
+    long_description=read("README.md"),
     long_description_content_type="text/markdown",
     include_package_data=True,
     packages=find_packages(include=["cloud2sql", "cloud2sql.*"]),
-    setup_requires=setup_requirements,
+    setup_requires=["pytest-runner"],
     test_suite="tests",
-    tests_require=test_required,
+    tests_require=read_requirements("requirements-test.txt"),
     url="https://github.com/someengineering/cloud2sql",
 )
