@@ -1,0 +1,7 @@
+include README.md
+include requirements.txt
+include requirements-test.txt
+include requirements-mysql.txt
+include requirements-parquet.txt
+include requirements-postgresql.txt
+include requirements-snowflake.txt
