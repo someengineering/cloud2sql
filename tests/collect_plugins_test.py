@@ -47,10 +47,12 @@ def test_collect() -> None:
 
 
 def test_collect_csv() -> None:
-
     def load_csv(path: Path) -> Dict[str, List[List[str]]]:
         """Load a folder with csv files into a dictionary"""
-        result = {csv_path.name.strip(".csv"): list(csv.reader(open(csv_path)))[1:] for csv_path in pathlib.Path(path).glob("*.csv")}
+        result = {
+            csv_path.name.strip(".csv"): list(csv.reader(open(csv_path)))[1:]
+            for csv_path in pathlib.Path(path).glob("*.csv")
+        }
         return result
 
     with TemporaryDirectory() as tmp:
@@ -75,4 +77,4 @@ def test_collect_csv() -> None:
             "link_example_region_example_network": 2,
             "link_example_region_example_volume": 2,
         }
-        assert counts == expected_counts 
+        assert counts == expected_counts
