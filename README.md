@@ -10,9 +10,10 @@ Python 3.9 or higher is required.
 You can install Cloud2SQL using:
 
 ```bash
-pip install --user cloud2sql[all]
+pip3 install --user "cloud2sql[all]"
 ```
 
+This will install the executable to the user install directory of your platform. Please make sure this installation directory is listed in `PATH`.
 If you only require support for a specific database, instead of `cloud2sql[all]` you can choose between `cloud2sql[snowflake]`, `cloud2sql[parquet]`, `cloud2sql[postgresql]`, `cloud2sql[mysql]`.
 
 ## Usage
