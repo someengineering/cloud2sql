@@ -131,7 +131,7 @@ def collect_to_file(
     model = ArrowModel(Model({k.fqn: k for k in kinds}), config.format)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_current = 0
-    progress_update = node_edge_count // 100
+    progress_update = max(node_edge_count // 100, 1)
     feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
 
     # group all edges by kind of from/to
