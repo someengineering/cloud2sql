@@ -1,6 +1,7 @@
 from resotoclient.models import Model
 
-from cloud2sql.parquet import ArrowModel, ArrowWriter
+from cloud2sql.arrow.model import ArrowModel
+from cloud2sql.arrow.writer import ArrowWriter
 
 
 def test_create_schema(model: Model) -> None:

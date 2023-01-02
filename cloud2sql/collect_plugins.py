@@ -34,7 +34,8 @@ from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
 
 try:
-    from cloud2sql.parquet import ArrowModel, ArrowWriter
+    from cloud2sql.arrow.model import ArrowModel
+    from cloud2sql.arrow.writer import ArrowWriter
 except ImportError:
     pass
 

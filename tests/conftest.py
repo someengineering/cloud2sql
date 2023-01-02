@@ -9,7 +9,8 @@ from resotolib.types import Json
 from sqlalchemy.engine import create_engine, Engine
 
 from cloud2sql.sql import SqlDefaultUpdater
-from cloud2sql.parquet import ArrowModel, ArrowWriter
+from cloud2sql.arrow.model import ArrowModel
+from cloud2sql.arrow.writer import ArrowWriter
 from pathlib import Path
 import shutil
 import uuid

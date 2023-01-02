@@ -1,115 +1,15 @@
-from resotoclient.models import Kind, Model, JsObject
-from typing import Dict, List, Any, NamedTuple, Optional, Tuple, final, Literal
-import pyarrow as pa
+from typing import Dict, List, Any, NamedTuple, Optional, final, Literal
 import pyarrow.csv as csv
-from cloud2sql.schema_utils import (
-    base_kinds,
-    get_table_name,
-    get_link_table_name,
-    kind_properties,
-    insert_node,
-)
-import pyarrow.parquet as pq
-from pathlib import Path
 from dataclasses import dataclass
 import dataclasses
 from abc import ABC
+import pyarrow.parquet as pq
+import pyarrow as pa
 import json
-
-
-class ArrowModel:
-    def __init__(self, model: Model, output_format: Literal["parquet", "csv"]):
-        self.model = model
-        self.table_kinds = [
-            kind
-            for kind in model.kinds.values()
-            if kind.aggregate_root and kind.runtime_kind is None and kind.fqn not in base_kinds
-        ]
-        self.schemas: Dict[str, pa.Schema] = {}
-        self.output_format: Literal["parquet", "csv"] = output_format
-
-    def _pyarrow_type(self, kind: str) -> pa.lib.DataType:
-        if "[]" in kind:
-            #  csv does not support lists
-            if self.output_format == "csv":
-                return pa.string()
-            return pa.list_(self._pyarrow_type(kind.strip("[]")))
-        elif kind.startswith("dictionary"):
-            #  csv does not support dictionaries
-            if self.output_format == "csv":
-                return pa.string()
-
-            (key_kind, value_kind) = kind.strip("dictionary").strip("[]").split(",")
-            return pa.map_(self._pyarrow_type(key_kind.strip()), self._pyarrow_type(value_kind.strip()))
-        elif kind == "int32":
-            return pa.int32()
-        elif kind == "int64":
-            return pa.int64()
-        elif kind == "float":
-            pa.float32()
-        elif kind == "double":
-            return pa.float64()
-        elif kind in {"string", "datetime", "date", "duration", "any"}:
-            return pa.string()
-        elif kind == "boolean":
-            return pa.bool_()
-        elif kind in self.model.kinds:
-            #  csv does not support fancy types
-            if self.output_format == "csv":
-                return pa.string()
-
-            nested_kind = self.model.kinds[kind]
-            if nested_kind.runtime_kind is not None:
-                return self._pyarrow_type(nested_kind.runtime_kind)
-
-            properties, _ = kind_properties(nested_kind, self.model)
-            return pa.struct([pa.field(p.name, self._pyarrow_type(p.kind)) for p in properties])
-        else:
-            raise Exception(f"Unknown kind {kind}")
-
-    def create_schema(self, edges: List[Tuple[str, str]]) -> None:
-        def table_schema(kind: Kind) -> None:
-            table_name = get_table_name(kind.fqn, with_tmp_prefix=False)
-            if table_name not in self.schemas:
-                properties, _ = kind_properties(kind, self.model)
-                schema = pa.schema(
-                    [
-                        pa.field("_id", pa.string()),
-                        *[pa.field(p.name, self._pyarrow_type(p.kind)) for p in properties],
-                    ]
-                )
-                self.schemas[table_name] = schema
-
-        def link_table_schema(from_kind: str, to_kind: str) -> None:
-            from_table = get_table_name(from_kind, with_tmp_prefix=False)
-            to_table = get_table_name(to_kind, with_tmp_prefix=False)
-            link_table = get_link_table_name(from_kind, to_kind, with_tmp_prefix=False)
-            if link_table not in self.schemas and from_table in self.schemas and to_table in self.schemas:
-                schema = pa.schema(
-                    [
-                        pa.field("from_id", pa.string()),
-                        pa.field("to_id", pa.string()),
-                    ]
-                )
-                self.schemas[link_table] = schema
-
-        def link_table_schema_from_successors(kind: Kind) -> None:
-            _, successors = kind_properties(kind, self.model)
-            # create link table for all linked entities
-            for successor in successors:
-                link_table_schema(kind.fqn, successor)
-
-        # step 1: create tables for all kinds
-        for kind in self.table_kinds:
-            table_schema(kind)
-        # step 2: create link tables for all kinds
-        for kind in self.table_kinds:
-            link_table_schema_from_successors(kind)
-        # step 3: create link tables for all seen edges
-        for from_kind, to_kind in edges:
-            link_table_schema(from_kind, to_kind)
-
-        return None
+from pathlib import Path
+from cloud2sql.arrow.model import ArrowModel
+from cloud2sql.schema_utils import insert_node
+from resotoclient.models import JsObject
 
 
 class WriteResult(NamedTuple):
