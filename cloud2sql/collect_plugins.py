@@ -34,7 +34,8 @@ from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
 
 try:
-    from cloud2sql.parquet import ArrowModel, ArrowWriter
+    from cloud2sql.arrow.model import ArrowModel
+    from cloud2sql.arrow.writer import ArrowWriter
 except ImportError:
     pass
 
@@ -127,10 +128,10 @@ def collect_to_file(
     collector.collect()
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    model = ArrowModel(Model({k.fqn: k for k in kinds}))
+    model = ArrowModel(Model({k.fqn: k for k in kinds}), config.format)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_current = 0
-    progress_update = node_edge_count // 100
+    progress_update = max(node_edge_count // 100, 1)
     feedback.progress_done("sync_db", 0, node_edge_count, context=[collector.cloud])
 
     # group all edges by kind of from/to

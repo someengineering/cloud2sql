@@ -5,7 +5,6 @@ from resotoclient.models import Property, Kind, JsObject, Model
 from resotolib.types import Json
 from typing import List, Dict, Tuple, Optional, Any, Callable, TypeVar
 from cloud2sql.util import value_in_path
-import json
 
 # This set will hold the names of all "base" resources
 # Since that are abstract classes, there will be no instances of them - hence we do not need a table for them.
@@ -73,11 +72,6 @@ def insert_node(
 ) -> Optional[T]:
     if node.get("type") == "node" and "id" in node and "reported" in node:
         reported: Json = node.get("reported", {})
-        if flatten:
-            for name, value in reported.items():
-                if isinstance(value, (dict, list, set)):
-                    reported[name] = json.dumps(value)  # convert to json in case of a nested object
-
         reported["_id"] = node["id"]
         reported["cloud"] = value_in_path(node, carz_access["cloud"])
         reported["account"] = value_in_path(node, carz_access["account"])

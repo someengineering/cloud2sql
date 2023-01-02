@@ -1,10 +1,11 @@
 from resotoclient.models import Model
 
-from cloud2sql.parquet import ArrowModel, ArrowWriter
+from cloud2sql.arrow.model import ArrowModel
+from cloud2sql.arrow.writer import ArrowWriter
 
 
 def test_create_schema(model: Model) -> None:
-    parquet_model = ArrowModel(model)
+    parquet_model = ArrowModel(model, "parquet")
     parquet_model.create_schema([])
 
     assert parquet_model.schemas.keys() == {"some_instance", "some_volume", "link_some_instance_some_volume"}

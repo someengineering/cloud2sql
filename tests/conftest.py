@@ -9,7 +9,8 @@ from resotolib.types import Json
 from sqlalchemy.engine import create_engine, Engine
 
 from cloud2sql.sql import SqlDefaultUpdater
-from cloud2sql.parquet import ArrowModel, ArrowWriter
+from cloud2sql.arrow.model import ArrowModel
+from cloud2sql.arrow.writer import ArrowWriter
 from pathlib import Path
 import shutil
 import uuid
@@ -70,7 +71,7 @@ def updater(model: Model) -> SqlDefaultUpdater:
 
 @fixture()
 def parquet_writer(model: Model):
-    parquet_model = ArrowModel(model)
+    parquet_model = ArrowModel(model, "parquet")
     parquet_model.create_schema([])
 
     p = Path(f"test_parquet_{uuid.uuid4()}")
