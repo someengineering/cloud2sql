@@ -5,9 +5,18 @@ Read infrastructure data from your cloud ☁️ and export it to a SQL database 
 
 ## Installation
 
-Python 3.9 or higher is required.
+There is a homebrew formula available.
 
-You can install Cloud2SQL using:
+```bash
+brew install someengineering/tap/cloud2sql
+```
+
+Note: the installation process will take a couple of minutes.
+
+
+
+Alternatively you can install cloud2sql as Python package. 
+Python 3.9 or higher is required.
 
 ```bash
 pip3 install --user "cloud2sql[all]"
