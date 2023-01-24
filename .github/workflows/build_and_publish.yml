@@ -86,7 +86,7 @@ jobs:
     name: Update cloud2sql.com
     if: github.ref_type == 'tag'
     needs:
-      - build
+      - cloud2sql
     runs-on: ubuntu-latest
 
     steps:
