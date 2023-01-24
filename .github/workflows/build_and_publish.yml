@@ -2,7 +2,7 @@ name: Check PR cloud2sql
 on:
   push:
     tags:
-      - "*.*.*"
+      - '*.*.*'
     branches:
       - main
   pull_request:
@@ -12,7 +12,7 @@ on:
 
 jobs:
   cloud2sql:
-    name: "cloud2sql"
+    name: 'cloud2sql'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,11 +42,8 @@ jobs:
 
       - name: Build a binary wheel and a source tarball
         run: >-
-          python -m
-          build
-          --sdist
-          --wheel
-          --outdir dist/
+          python -m build --sdist --wheel --outdir dist/
+
 
       - name: Publish distribution to PyPI
         if: github.ref_type == 'tag'
@@ -84,3 +81,66 @@ jobs:
         with:
           name: ${{ steps.pyinstaller.outputs.target }}
           path: dist/${{ steps.pyinstaller.outputs.target }}
+
+  docs:
+    name: Update cloud2sql.com
+    if: github.ref_type == 'tag'
+    needs:
+      - build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get release tag and type
+        id: release
+        shell: bash
+        run: |
+          GITHUB_REF="${{ github.ref }}"
+          tag=${GITHUB_REF##*/}
+          echo "tag=${tag}" >> $GITHUB_OUTPUT
+
+          if [[ ${{ github.ref }} =~ ^refs/tags/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check out someengineering/cloud2sql.com
+        if: steps.release.outputs.prerelease == 'false'
+        uses: actions/checkout@v3
+        with:
+          repository: someengineering/cloud2sql.com
+          path: cloud2sql.com
+          token: ${{ secrets.SOME_CI_PAT }}
+
+      - name: Update released version
+        if: steps.release.outputs.prerelease == 'false'
+        shell: bash
+        working-directory: ./cloud2sql.com
+        run: |
+          echo $(jq '.version="${{ steps.release.outputs.tag }}" | .link="https://github.com/someengineering/cloud2sql/releases/tag/${{ steps.release.outputs.tag }}"' latestRelease.json) > latestRelease.json
+          yarn format
+
+      - name: Create someengineering/cloud2sql.com pull request
+        if: steps.release.outputs.prerelease == 'false'
+        uses: peter-evans/create-pull-request@v4
+        env:
+          HUSKY: 0
+        with:
+          path: cloud2sql.com
+          commit-message: 'chore: update Cloud2SQL version to ${{ steps.release.outputs.tag }}'
+          title: 'chore: update Cloud2SQL version to ${{ steps.release.outputs.tag }}'
+          body: |
+            Updates Cloud2SQL version on cloud2sql.com to `${{ steps.release.outputs.tag }}`.
+          labels: |
+            🤖 bot
+          branch: ${{ steps.release.outputs.tag }}
+          delete-branch: true
+          token: ${{ secrets.SOME_CI_PAT }}
+          committer: C.K. <98986935+some-ci@users.noreply.github.com>
+          author: C.K. <98986935+some-ci@users.noreply.github.com>
+
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{steps.release.outputs.prerelease}}
