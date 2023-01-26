@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, NamedTuple, Optional, final, Literal
+from typing import Dict, List, Any, NamedTuple, Optional, final
 import pyarrow.csv as csv
 from dataclasses import dataclass
 import dataclasses
@@ -8,8 +8,10 @@ import pyarrow as pa
 import json
 from pathlib import Path
 from cloud2sql.arrow.model import ArrowModel
+from cloud2sql.arrow import ArrowOutputConfig, S3Destination, GCSDestination, FileDestination
 from cloud2sql.schema_utils import insert_node
 from resotoclient.models import JsObject
+from pyarrow import fs
 
 
 class WriteResult(NamedTuple):
@@ -24,12 +26,14 @@ class FileWriter(ABC):
 @dataclass(frozen=True)
 class Parquet(FileWriter):
     parquet_writer: pq.ParquetWriter
+    output_stream: pa.PythonFile
 
 
 @final
 @dataclass(frozen=True)
 class CSV(FileWriter):
     csv_writer: csv.CSVWriter
+    output_stream: pa.PythonFile
 
 
 @final
@@ -169,48 +173,78 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
 def close_writer(batch: ArrowBatch) -> None:
     if isinstance(batch.writer, Parquet):
         batch.writer.parquet_writer.close()
+        batch.writer.output_stream.close()
     elif isinstance(batch.writer, CSV):
         batch.writer.csv_writer.close()
+        batch.writer.output_stream.close()
     else:
         raise ValueError(f"Unknown format {batch.writer}")
 
 
-def new_writer(format: Literal["parquet", "csv"], table_name: str, schema: pa.Schema, result_dir: Path) -> FileWriter:
+def new_writer(table_name: str, schema: pa.Schema, output_config: ArrowOutputConfig) -> FileWriter:
     def ensure_path(path: Path) -> Path:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    if format == "parquet":
-        return Parquet(pq.ParquetWriter(Path(ensure_path(result_dir), f"{table_name}.parquet"), schema=schema))
-    elif format == "csv":
-        return CSV(csv.CSVWriter(Path(ensure_path(result_dir), f"{table_name}.csv"), schema=schema))
+    filesystem: fs.FileSystem
+    uri: str
+
+    if isinstance(output_config.destination, FileDestination):
+        filesystem = fs.LocalFileSystem()
+        parent_dir = ensure_path(output_config.destination.path)
+        uri = str(parent_dir)
+    elif isinstance(output_config.destination, S3Destination):
+        filesystem = fs.S3FileSystem(region=output_config.destination.region)
+        uri = output_config.destination.uri
+        if uri.startswith("s3://"):
+            uri = uri[5:]
+    elif isinstance(output_config.destination, GCSDestination):
+        filesystem = fs.GCSFileSystem()
+        uri = output_config.destination.uri
+        if uri.startswith("gcs://"):
+            uri = uri[6:]
     else:
-        raise ValueError(f"Unknown format {format}")
+        raise ValueError(f"Unknown filesystem type {type(output_config.destination)}")
+
+    if output_config.format == "parquet":
+        output_stream = filesystem.open_output_stream(f"{uri}/{table_name}.parquet")
+        return Parquet(pq.ParquetWriter(output_stream, schema=schema), output_stream)
+    elif output_config.format == "csv":
+        output_stream = filesystem.open_output_stream(f"{uri}/{table_name}.csv")
+        return CSV(csv.CSVWriter(output_stream, schema=schema), output_stream)
+    else:
+        raise ValueError(f"Unknown format {output_config.format}")
 
 
 class ArrowWriter:
-    def __init__(
-        self, model: ArrowModel, result_directory: Path, rows_per_batch: int, output_format: Literal["parquet", "csv"]
-    ):
+    def __init__(self, model: ArrowModel, output_config: ArrowOutputConfig):
         self.model = model
         self.kind_by_id: Dict[str, str] = {}
         self.batches: Dict[str, ArrowBatch] = {}
-        self.rows_per_batch: int = rows_per_batch
-        self.result_directory: Path = result_directory
-        self.output_format: Literal["parquet", "csv"] = output_format
+        self.output_config: ArrowOutputConfig = output_config
 
     def insert_value(self, table_name: str, values: Any) -> Optional[WriteResult]:
         if self.model.schemas.get(table_name):
             schema = self.model.schemas[table_name]
-            batch = self.batches.get(
-                table_name,
-                ArrowBatch(
+            if table_name in self.batches:
+                batch = self.batches[table_name]
+            else:
+                batch = ArrowBatch(
                     table_name,
                     [],
                     schema,
-                    new_writer(self.output_format, table_name, schema, self.result_directory),
-                ),
-            )
+                    new_writer(table_name, schema, self.output_config),
+                )
+
+            # batch = self.batches.get(
+            #     table_name,
+            #     ArrowBatch(
+            #         table_name,
+            #         [],
+            #         schema,
+            #         new_writer(table_name, schema, self.output_config),
+            #     ),
+            # )
 
             batch.rows.append(values)
             self.batches[table_name] = batch
@@ -224,7 +258,7 @@ class ArrowWriter:
             self.insert_value,
             with_tmp_prefix=False,
         )
-        should_write_batch = result and len(self.batches[result.table_name].rows) > self.rows_per_batch
+        should_write_batch = result and len(self.batches[result.table_name].rows) > self.output_config.batch_size
         if result and should_write_batch:
             batch = self.batches[result.table_name]
             self.batches[result.table_name] = write_batch_to_file(batch)

@@ -59,7 +59,7 @@ def main() -> None:
         sender = NoEventSender() if args.analytics_opt_out else PosthogEventSender()
         config = configure(args.config)
         engine = None
-        if next(iter(config["destinations"].keys()), None) == "file":
+        if config["destinations"].keys() & set(["file", "s3", "gcs"]):
             check_parquet_driver()
         else:
             engine = create_engine(db_string_from_config(config))
