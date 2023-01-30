@@ -26,6 +26,7 @@ from resotolib.types import Json
 from rich import print as rich_print
 from rich.live import Live
 from sqlalchemy.engine import Engine
+import re
 
 
 from cloud2sql.analytics import AnalyticsEventSender
@@ -35,7 +36,7 @@ from cloud2sql.sql import SqlUpdater, sql_updater
 try:
     from cloud2sql.arrow.model import ArrowModel
     from cloud2sql.arrow.writer import ArrowWriter
-    from cloud2sql.arrow import ArrowOutputConfig, FileDestination, CloudBucketDestination, S3Bucket, GCSBucket
+    from cloud2sql.arrow.config import ArrowOutputConfig, FileDestination, CloudBucketDestination, S3Bucket, GCSBucket
 except ImportError:
     pass
 
@@ -96,12 +97,25 @@ def configure(path_to_config: Optional[str]) -> Json:
         return config
 
     if "s3" in destinations:
+        # https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-bucket-intro.html
+        def normalize_s3_bucket_name(url: str) -> str:
+            if match := re.match(r"^([^/]+)$", url):
+                return match.group(1)
+            if match := re.match(r"^[sS]3://([^/]+)/?.*$", url):
+                return match.group(1)
+            if match := re.match(r"^https://(.+)\.s3\.(.*)\.amazonaws.com/?.*$", url):
+                return match.group(1)
+            if match := re.match(r"^https://s3\.(.+)\.amazonaws\.com/([^/]+)/?.*", url):
+                return match.group(2)
+            raise ValueError(f"Unsupported S3 bucket name: {url}")
+
         s3_dest = config["destinations"]["s3"]
         require(["region"], s3_dest, "No region configured for s3 destination")
         validate_arrow_config(s3_dest)
+        bucket_name = normalize_s3_bucket_name(s3_dest["uri"])
         config["destinations"]["arrow"] = ArrowOutputConfig(
             destination=CloudBucketDestination(
-                uri=s3_dest["uri"],
+                bucket_name=bucket_name,
                 cloud_bucket=S3Bucket(
                     region=s3_dest["region"],
                 ),
@@ -114,10 +128,11 @@ def configure(path_to_config: Optional[str]) -> Json:
     if "gcs" in destinations:
         gcs_dest = config["destinations"]["gcs"]
         validate_arrow_config(gcs_dest)
+        bucket_name = gcs_dest["uri"].replace("gs://", "")
         config["destinations"]["arrow"] = ArrowOutputConfig(
             destination=CloudBucketDestination(
                 cloud_bucket=GCSBucket(),
-                uri=gcs_dest["uri"],
+                bucket_name=bucket_name,
             ),
             batch_size=int(gcs_dest.get("batch_size", 100_000)),
             format=gcs_dest["format"],

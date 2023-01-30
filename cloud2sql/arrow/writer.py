@@ -8,7 +8,7 @@ import pyarrow as pa
 import json
 from pathlib import Path
 from cloud2sql.arrow.model import ArrowModel
-from cloud2sql.arrow import (
+from cloud2sql.arrow.config import (
     ArrowOutputConfig,
     FileDestination,
     CloudBucketDestination,
@@ -188,22 +188,12 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
 
 
 def close_writer(batch: ArrowBatch) -> None:
-    def uploadToS3(path: Path, bucket_uri: str, region: str) -> None:
-        bucket_name: str
-        if bucket_uri.startswith("s3://"):
-            bucket_name = bucket_uri[5:]
-        else:
-            bucket_name = bucket_uri
+    def uploadToS3(path: Path, bucket_name: str, region: str) -> None:
         s3_client = boto3.client("s3", region_name=region)
         s3_client.upload_file(str(path), bucket_name, path.name)
 
-    def uploadToGCS(path: Path, uri: str) -> None:
+    def uploadToGCS(path: Path, bucket_name: str) -> None:
         storage_client = storage.Client()
-        bucket_name: str
-        if uri.startswith("gs://"):
-            bucket_name = uri[5:]
-        else:
-            bucket_name = uri
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(path.name)
         blob.upload_from_filename(str(path))
@@ -212,9 +202,9 @@ def close_writer(batch: ArrowBatch) -> None:
         if isinstance(batch.destination, CloudBucketDestination):
             destination = batch.destination
             if isinstance(destination.cloud_bucket, S3Bucket):
-                uploadToS3(batch.writer.path, destination.uri, destination.cloud_bucket.region)
+                uploadToS3(batch.writer.path, destination.bucket_name, destination.cloud_bucket.region)
             elif isinstance(destination.cloud_bucket, GCSBucket):
-                uploadToGCS(batch.writer.path, destination.uri)
+                uploadToGCS(batch.writer.path, destination.bucket_name)
             else:
                 raise ValueError(f"Unknown cloud bucket {destination.cloud_bucket}")
 
@@ -241,7 +231,7 @@ def new_writer(table_name: str, schema: pa.Schema, output_config: ArrowOutputCon
     if isinstance(output_config.destination, FileDestination):
         result_dir = ensure_path(output_config.destination.path)
     else:
-        hashed_url = sha(output_config.destination.uri)
+        hashed_url = sha(output_config.destination.bucket_name)
         result_dir = ensure_path(Path(f"/tmp/cloud2sql-uploads/{hashed_url}"))
 
     file_writer_format: Union[Parquet, CSV]

@@ -11,7 +11,7 @@ from sqlalchemy.engine import create_engine, Engine
 from cloud2sql.sql import SqlDefaultUpdater
 from cloud2sql.arrow.model import ArrowModel
 from cloud2sql.arrow.writer import ArrowWriter
-from cloud2sql.arrow import ArrowOutputConfig, FileDestination
+from cloud2sql.arrow.config import ArrowOutputConfig, FileDestination
 from pathlib import Path
 import shutil
 import uuid

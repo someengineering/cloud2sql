@@ -27,7 +27,7 @@ CloudBucketType = Union[S3Bucket, GCSBucket]
 @final
 @dataclass(frozen=True)
 class CloudBucketDestination:
-    uri: str
+    bucket_name: str
     cloud_bucket: CloudBucketType
 
 
