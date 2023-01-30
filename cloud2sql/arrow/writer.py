@@ -19,7 +19,7 @@ from cloud2sql.arrow import (
 from cloud2sql.schema_utils import insert_node
 from resotoclient.models import JsObject
 
-# import boto3
+import boto3
 import hashlib
 
 
@@ -187,8 +187,14 @@ def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
 
 
 def close_writer(batch: ArrowBatch) -> None:
-    def uploadToS3(path: Path, uri: str, region: str) -> None:
-        print(f"S3 uploader: Uploading {path} to {uri} in {region}")
+    def uploadToS3(path: Path, bucket_uri: str, region: str) -> None:
+        bucket_name: str
+        if bucket_uri.startswith("s3://"):
+            bucket_name = bucket_uri[5:]
+        else:
+            bucket_name = bucket_uri
+        s3_client = boto3.client("s3", region_name=region)
+        s3_client.upload_file(str(path), bucket_name, path.name)
 
     def uploadToGCS(path: Path, uri: str) -> None:
         print(f"GCS uploader: Uploading {path} to {uri}")
