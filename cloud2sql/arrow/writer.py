@@ -20,6 +20,7 @@ from cloud2sql.schema_utils import insert_node
 from resotoclient.models import JsObject
 
 import boto3
+from google.cloud import storage
 import hashlib
 
 
@@ -50,7 +51,7 @@ class FileWriter:
 
 
 @final
-@dataclass
+@dataclass(frozen=True)
 class ArrowBatch:
     table_name: str
     rows: List[Dict[str, Any]]
@@ -197,7 +198,15 @@ def close_writer(batch: ArrowBatch) -> None:
         s3_client.upload_file(str(path), bucket_name, path.name)
 
     def uploadToGCS(path: Path, uri: str) -> None:
-        print(f"GCS uploader: Uploading {path} to {uri}")
+        storage_client = storage.Client()
+        bucket_name: str
+        if uri.startswith("gs://"):
+            bucket_name = uri[5:]
+        else:
+            bucket_name = uri
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(path.name)
+        blob.upload_from_filename(str(path))
 
     def maybeUpload() -> None:
         if isinstance(batch.destination, CloudBucketDestination):
