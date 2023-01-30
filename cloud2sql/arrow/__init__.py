@@ -1,25 +1,37 @@
 from dataclasses import dataclass
-from typing import Union, Literal
+from typing import Union, Literal, final
 from pathlib import Path
 
 
+@final
 @dataclass(frozen=True)
-class S3Destination:
-    uri: str
+class S3Bucket:
     region: str
 
 
+@final
 @dataclass(frozen=True)
-class GCSDestination:
-    uri: str
+class GCSBucket:
+    pass
 
 
+@final
 @dataclass(frozen=True)
 class FileDestination:
     path: Path
 
 
-ArrowDestination = Union[S3Destination, GCSDestination, FileDestination]
+CloudBucketType = Union[S3Bucket, GCSBucket]
+
+
+@final
+@dataclass(frozen=True)
+class CloudBucketDestination:
+    uri: str
+    cloud_bucket: CloudBucketType
+
+
+ArrowDestination = Union[FileDestination, CloudBucketDestination]
 
 
 @dataclass(frozen=True)

@@ -35,7 +35,7 @@ from cloud2sql.sql import SqlUpdater, sql_updater
 try:
     from cloud2sql.arrow.model import ArrowModel
     from cloud2sql.arrow.writer import ArrowWriter
-    from cloud2sql.arrow import ArrowOutputConfig, FileDestination, S3Destination, GCSDestination
+    from cloud2sql.arrow import ArrowOutputConfig, FileDestination, CloudBucketDestination, S3Bucket, GCSBucket
 except ImportError:
     pass
 
@@ -100,9 +100,11 @@ def configure(path_to_config: Optional[str]) -> Json:
         require(["region"], s3_dest, "No region configured for s3 destination")
         validate_arrow_config(s3_dest)
         config["destinations"]["arrow"] = ArrowOutputConfig(
-            destination=S3Destination(
+            destination=CloudBucketDestination(
                 uri=s3_dest["uri"],
-                region=s3_dest["region"],
+                cloud_bucket=S3Bucket(
+                    region=s3_dest["region"],
+                ),
             ),
             batch_size=int(s3_dest.get("batch_size", 100_000)),
             format=s3_dest["format"],
@@ -113,7 +115,8 @@ def configure(path_to_config: Optional[str]) -> Json:
         gcs_dest = config["destinations"]["gcs"]
         validate_arrow_config(gcs_dest)
         config["destinations"]["arrow"] = ArrowOutputConfig(
-            destination=GCSDestination(
+            destination=CloudBucketDestination(
+                cloud_bucket=GCSBucket(),
                 uri=gcs_dest["uri"],
             ),
             batch_size=int(gcs_dest.get("batch_size", 100_000)),
