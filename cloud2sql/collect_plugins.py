@@ -8,9 +8,8 @@ from logging import getLogger
 from queue import Queue
 from threading import Event
 from time import sleep
-from typing import Dict, Optional, List, Any, Tuple, Set, Literal
+from typing import Dict, Optional, List, Any, Tuple, Set
 from pathlib import Path
-from dataclasses import dataclass
 
 import pkg_resources
 import yaml
@@ -27,6 +26,7 @@ from resotolib.types import Json
 from rich import print as rich_print
 from rich.live import Live
 from sqlalchemy.engine import Engine
+import re
 
 
 from cloud2sql.analytics import AnalyticsEventSender
@@ -36,6 +36,7 @@ from cloud2sql.sql import SqlUpdater, sql_updater
 try:
     from cloud2sql.arrow.model import ArrowModel
     from cloud2sql.arrow.writer import ArrowWriter
+    from cloud2sql.arrow.config import ArrowOutputConfig, FileDestination, CloudBucketDestination, S3Bucket, GCSBucket
 except ImportError:
     pass
 
@@ -61,16 +62,10 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
     return result
 
 
-@dataclass(frozen=True)
-class FileDestination:
-    path: Path
-    format: Literal["parquet", "csv"]
-    batch_size: int
-
-
 def configure(path_to_config: Optional[str]) -> Json:
-    def require(key: str, obj: Json, msg: str):
-        if key not in obj:
+    # at least one key should be present
+    def require(keys: List[str], obj: Json, msg: str):
+        if not (set(keys) & obj.keys()):
             raise ValueError(msg)
 
     config = {}
@@ -83,15 +78,66 @@ def configure(path_to_config: Optional[str]) -> Json:
     if "destinations" not in config:
         raise ValueError("No destinations configured")
 
-    if "file" in (config.get("destinations", {}) or {}):
-        file_dest = config["destinations"]["file"]
-        require("format", file_dest, "No format configured for file destination")
-        if not file_dest["format"] in ["parquet", "csv"]:
+    def validate_arrow_config(config: Json):
+        require(["format"], config, "No format configured for arrow destination")
+        if not config["format"] in ["parquet", "csv"]:
             raise ValueError("Format must be either parquet or csv")
-        require("path", file_dest, "No path configured for file destination")
-        config["destinations"]["file"] = FileDestination(
-            Path(file_dest["path"]), file_dest["format"], int(file_dest.get("batch_size", 100_000))
+        require(["path", "uri"], config, "No path configured for arrow destination")
+
+    destinations = set((config.get("destinations", {}) or {}).keys())
+
+    if "file" in destinations:
+        file_dest = config["destinations"]["file"]
+        validate_arrow_config(file_dest)
+        config["destinations"]["arrow"] = ArrowOutputConfig(
+            destination=FileDestination(Path(file_dest["path"])),
+            batch_size=int(file_dest.get("batch_size", 100_000)),
+            format=file_dest["format"],
         )
+        return config
+
+    if "s3" in destinations:
+        # https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-bucket-intro.html
+        def normalize_s3_bucket_name(url: str) -> str:
+            if match := re.match(r"^([^/]+)$", url):
+                return match.group(1)
+            if match := re.match(r"^[sS]3://([^/]+)/?.*$", url):
+                return match.group(1)
+            if match := re.match(r"^https://(.+)\.s3\.(.*)\.amazonaws.com/?.*$", url):
+                return match.group(1)
+            if match := re.match(r"^https://s3\.(.+)\.amazonaws\.com/([^/]+)/?.*", url):
+                return match.group(2)
+            raise ValueError(f"Unsupported S3 bucket name: {url}")
+
+        s3_dest = config["destinations"]["s3"]
+        require(["region"], s3_dest, "No region configured for s3 destination")
+        validate_arrow_config(s3_dest)
+        bucket_name = normalize_s3_bucket_name(s3_dest["uri"])
+        config["destinations"]["arrow"] = ArrowOutputConfig(
+            destination=CloudBucketDestination(
+                bucket_name=bucket_name,
+                cloud_bucket=S3Bucket(
+                    region=s3_dest["region"],
+                ),
+            ),
+            batch_size=int(s3_dest.get("batch_size", 100_000)),
+            format=s3_dest["format"],
+        )
+        return config
+
+    if "gcs" in destinations:
+        gcs_dest = config["destinations"]["gcs"]
+        validate_arrow_config(gcs_dest)
+        bucket_name = gcs_dest["uri"].replace("gs://", "")
+        config["destinations"]["arrow"] = ArrowOutputConfig(
+            destination=CloudBucketDestination(
+                cloud_bucket=GCSBucket(),
+                bucket_name=bucket_name,
+            ),
+            batch_size=int(gcs_dest.get("batch_size", 100_000)),
+            format=gcs_dest["format"],
+        )
+        return config
 
     return config
 
@@ -102,9 +148,9 @@ def collect(
     if engine:
         return collect_sql(collector, engine, feedback, args)
     else:
-        if "file" not in config["destinations"]:
+        if not set(["file", "s3", "gcs"]) & config["destinations"].keys():
             raise ValueError("No file destination configured")
-        return collect_to_file(collector, feedback, config["destinations"]["file"])
+        return collect_to_file(collector, feedback, config["destinations"]["arrow"])
 
 
 def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
@@ -121,14 +167,14 @@ def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:
 
 
 def collect_to_file(
-    collector: BaseCollectorPlugin, feedback: CoreFeedback, config: FileDestination
+    collector: BaseCollectorPlugin, feedback: CoreFeedback, output_config: ArrowOutputConfig
 ) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
     # read the kinds created from this collector
     kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    model = ArrowModel(Model({k.fqn: k for k in kinds}), config.format)
+    model = ArrowModel(Model({k.fqn: k for k in kinds}), output_config.format)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_current = 0
     progress_update = max(node_edge_count // 100, 1)
@@ -142,7 +188,7 @@ def collect_to_file(
     # create the ddl metadata from the kinds
     model.create_schema(list(edges_by_kind))
     # ingest the data
-    writer = ArrowWriter(model, config.path, config.batch_size, config.format)
+    writer = ArrowWriter(model, output_config)
     node: BaseResource
     for node in sorted(collector.graph.nodes, key=lambda n: n.kind):
         exported = prepare_node(node, collector)

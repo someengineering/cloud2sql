@@ -11,6 +11,7 @@ from sqlalchemy.engine import create_engine, Engine
 from cloud2sql.sql import SqlDefaultUpdater
 from cloud2sql.arrow.model import ArrowModel
 from cloud2sql.arrow.writer import ArrowWriter
+from cloud2sql.arrow.config import ArrowOutputConfig, FileDestination
 from pathlib import Path
 import shutil
 import uuid
@@ -76,7 +77,7 @@ def parquet_writer(model: Model):
 
     p = Path(f"test_parquet_{uuid.uuid4()}")
     p.mkdir(exist_ok=True)
-    yield ArrowWriter(parquet_model, p, 1, "parquet")
+    yield ArrowWriter(parquet_model, ArrowOutputConfig(FileDestination(p), 1, "parquet"))
     shutil.rmtree(p)
 
 

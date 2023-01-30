@@ -9,5 +9,7 @@ sources:
       - path: "~/.kube/config"
         all_contexts: true
 destinations:
-  sqlite:
-    database: resoto.db
+  # sqlite:
+    # database: resoto.db
+  s3:
+    bucket_name: 

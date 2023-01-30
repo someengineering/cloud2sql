@@ -197,6 +197,26 @@ destinations:
     batch_size: 100_000
 ```
 
+#### Upload to S3
+
+```yaml
+destinations:
+  s3:
+    uri: s3://bucket_name/
+    region: eu-central-1
+    format: csv
+    batch_size: 100_000
+```
+
+### Upload to Google Cloud Storage
+
+```yaml
+destinations:
+  gcs:
+    uri: gs://bucket_name/
+    format: parquet
+    batch_size: 100_000
+```
 
 #### My database is not listed here
 
