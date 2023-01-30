@@ -233,7 +233,7 @@ def new_writer(table_name: str, schema: pa.Schema, output_config: ArrowOutputCon
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def sha1(input: str) -> str:
+    def sha(input: str) -> str:
         h = hashlib.new("sha256")
         h.update(input.encode("utf-8"))
         return h.hexdigest()
@@ -241,8 +241,8 @@ def new_writer(table_name: str, schema: pa.Schema, output_config: ArrowOutputCon
     if isinstance(output_config.destination, FileDestination):
         result_dir = ensure_path(output_config.destination.path)
     else:
-        hashed_url = output_config.destination.uri
-        result_dir = ensure_path(Path(f"/tmp/cloud2sql-uploads/{sha1(hashed_url)}"))
+        hashed_url = sha(output_config.destination.uri)
+        result_dir = ensure_path(Path(f"/tmp/cloud2sql-uploads/{hashed_url}"))
 
     file_writer_format: Union[Parquet, CSV]
     file_path: Path

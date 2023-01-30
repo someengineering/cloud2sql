@@ -182,7 +182,7 @@ destinations:
 ```yaml
 destinations:
   file:
-    path: file:///where/to/write/parquet/files/
+    path: /where/to/write/parquet/files/
     format: parquet
     batch_size: 100_000
 ```
