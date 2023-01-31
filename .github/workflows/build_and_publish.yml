@@ -112,6 +112,12 @@ jobs:
           path: cloud2sql.com
           token: ${{ secrets.SOME_CI_PAT }}
 
+      - name: Install dependencies
+        if: steps.release.outputs.prerelease == 'false'
+        working-directory: ./cloud2sql.com
+        run: |
+          yarn install --frozen-lockfile
+
       - name: Update released version
         if: steps.release.outputs.prerelease == 'false'
         shell: bash
