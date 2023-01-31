@@ -47,6 +47,7 @@ jobs:
 
       - name: Publish distribution to PyPI
         if: github.ref_type == 'tag'
+        continue-on-error: true # Ignore failure to publish to PyPI (e.g., when re-tagging a release)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
