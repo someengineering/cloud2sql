@@ -30,13 +30,14 @@ import re
 
 
 from cloud2sql.analytics import AnalyticsEventSender
+from cloud2sql.arrow.config import ArrowOutputConfig
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
 
 try:
     from cloud2sql.arrow.model import ArrowModel
     from cloud2sql.arrow.writer import ArrowWriter
-    from cloud2sql.arrow.config import ArrowOutputConfig, FileDestination, CloudBucketDestination, S3Bucket, GCSBucket
+    from cloud2sql.arrow.config import FileDestination, CloudBucketDestination, S3Bucket, GCSBucket
 except ImportError:
     pass
 

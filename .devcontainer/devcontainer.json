@@ -14,7 +14,11 @@
 	// "forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "bash .devcontainer/postCreate.sh"
+	"postCreateCommand": "bash .devcontainer/postCreate.sh",
+
+	"containerEnv": {
+		"CLOUD2SQL_ANALYTICS_OPT_OUT": "true"
+	}
 
 	// Configure tool-specific properties.
 	// "customizations": {},
