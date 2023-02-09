@@ -1,7 +1,6 @@
-FROM python:3.11
+FROM python:3.9
 
-# Leaving out snowflake, it requires an arrow installation.
-RUN pip3 install cloud2sql[mysql,mariadb,postgresql,parquet]==0.7.2
+RUN pip3 install cloud2sql[all]==0.7.2
 
 CMD ["cloud2sql"]
 
