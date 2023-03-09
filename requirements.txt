@@ -6,11 +6,11 @@ PyYAML>=6.0
 rich>=12.6.0
 resotoclient>=1.2.1
 posthog>=2.2.0
-requests>=2.28.1
+requests>=2.28.2
 
-resotolib>=3.1.0
+resotolib>=3.2.5, <3.3
 # all collector plugins
-resoto-plugin-aws>=3.1.0
-resoto-plugin-digitalocean>=3.1.0
-resoto-plugin-gcp>=3.1.0
-resoto-plugin-k8s>=3.1.0
+resoto-plugin-aws>=3.2.5, <3.3
+resoto-plugin-digitalocean>=3.2.5, <3.3
+resoto-plugin-gcp>=3.2.5, <3.3
+resoto-plugin-k8s>=3.2.5, <3.3

@@ -25,9 +25,9 @@ sources:
     # Account thread/process pool size
     account_pool_size: 8
     # Region thread pool size
-    region_pool_size: 128
+    region_pool_size: 32
     # Number of threads available shared for all regions
-    shared_pool_size: 128
+    shared_pool_size: 32
     # Number of threads to collect a single region
     region_resources_pool_size: 2
     # List of AWS services to collect (default: all)
@@ -97,7 +97,7 @@ sources:
     # Onelogin client secret
     client_secret: null
 destinations:
-  # Define the destination to sync. 
+  # Define the destination to sync.
   # PostgreSQL is listed here as example - see README.md for a list of possible targets.
   posgresql:
     host: 127.0.0.1
