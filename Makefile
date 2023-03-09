@@ -1,4 +1,4 @@
-.PHONY: clean clean-test clean-pyc clean-build clean-env docs help setup
+.PHONY: clean clean-test clean-pyc clean-build clean-env docs help setup test test-all
 .DEFAULT_GOAL := help
 .SILENT: clean clean-build clean-pyc clean-test setup
 
@@ -77,8 +77,7 @@ venv:
 	python3 -m venv venv --prompt "cloud2sql"
 	. ./venv/bin/activate && python3 -m pip install --upgrade pip
 	. ./venv/bin/activate && pip install -r requirements-test.txt
-	. ./venv/bin/activate && pip install -r requirements.txt
-	. ./venv/bin/activate && pip install -e .
+	. ./venv/bin/activate && pip install -e ".[all]"
 	. ./venv/bin/activate && mypy --install-types --non-interactive cloud2sql tests
 
 setup: clean clean-env venv
