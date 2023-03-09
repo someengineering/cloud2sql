@@ -34,7 +34,6 @@ def test_create_schema(model: Model) -> None:
 
 
 def test_update(parquet_writer: ArrowWriter) -> None:
-
     parquet_writer.insert_node(  # type: ignore
         {
             "type": "node",

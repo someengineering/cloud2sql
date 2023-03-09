@@ -168,7 +168,6 @@ def normalize(npath: NormalizationPath, obj: Any) -> Any:
 
 
 def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
-
     to_normalize = collect_normalization_paths(batch.schema)
 
     for row in batch.rows:
