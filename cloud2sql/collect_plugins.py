@@ -20,7 +20,7 @@ from resotolib.baseresources import BaseResource, EdgeType
 from resotolib.config import Config
 from resotolib.core.actions import CoreFeedback
 from resotolib.core.model_export import node_to_dict
-from resotolib.json import from_json
+from resotolib.json import from_json, to_json
 from resotolib.proc import emergency_shutdown
 from resotolib.types import Json
 from rich import print as rich_print
@@ -43,6 +43,17 @@ except ImportError:
 
 
 log = getLogger("resoto.cloud2sql")
+
+
+def default_config() -> Json:
+    config: Config = Config  # type: ignore
+    for entry_point in pkg_resources.iter_entry_points("resoto.plugins"):
+        plugin_class = entry_point.load()
+        if issubclass(plugin_class, BaseCollectorPlugin):
+            plugin_class.add_config(config)
+
+    Config.init_default_config()
+    return to_json(Config.running_config.data)
 
 
 def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollectorPlugin]:
@@ -149,7 +160,7 @@ def collect(
     if engine:
         return collect_sql(collector, engine, feedback, args)
     else:
-        if not set(["file", "s3", "gcs"]) & config["destinations"].keys():
+        if not {"file", "s3", "gcs"} & config["destinations"].keys():
             raise ValueError("No file destination configured")
         return collect_to_file(collector, feedback, config["destinations"]["arrow"])
 
