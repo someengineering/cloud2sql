@@ -41,7 +41,7 @@ def test_normalize() -> None:
 
     normalize(NormalizationPath(path=["bar", None], convert_to=ParquetMap(convert_values_to_str=True)), object)
 
-    assert object["bar"] == [[("a", "b"), ("c", "d")], [("a", "b"), ("c", "d")]]
+    assert object["bar"] == [[("a", "b"), ("c", "d")], [("a", "b"), ("c", "d")]]  # type: ignore
 
     normalize(NormalizationPath(path=["foobar"], convert_to=ParquetString()), object)
 

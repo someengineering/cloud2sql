@@ -34,7 +34,7 @@ def test_create_schema(model: Model) -> None:
 
 
 def test_update(parquet_writer: ArrowWriter) -> None:
-    parquet_writer.insert_node(  # type: ignore
+    parquet_writer.insert_node(
         {
             "type": "node",
             "id": "i-123",
@@ -53,7 +53,7 @@ def test_update(parquet_writer: ArrowWriter) -> None:
             },
         }
     )
-    parquet_writer.insert_node(  # type: ignore
+    parquet_writer.insert_node(
         {
             "type": "node",
             "id": "v-123",
@@ -71,7 +71,7 @@ def test_update(parquet_writer: ArrowWriter) -> None:
             },
         }
     )
-    parquet_writer.insert_node({"type": "edge", "from": "i-123", "to": "v-123"})  # type: ignore
+    parquet_writer.insert_node({"type": "edge", "from": "i-123", "to": "v-123"})
 
     # one instance is persisted
     assert set(parquet_writer.batches["some_instance"].rows[0].values()) == {
@@ -102,7 +102,7 @@ def test_update(parquet_writer: ArrowWriter) -> None:
     assert set(parquet_writer.batches["link_some_instance_some_volume"].rows[0].values()) == {"i-123", "v-123"}
 
     # write the batch when the batch size is reached
-    parquet_writer.insert_node({"type": "edge", "from": "i-123", "to": "v-123"})  # type: ignore
+    parquet_writer.insert_node({"type": "edge", "from": "i-123", "to": "v-123"})
     assert len(parquet_writer.batches["link_some_instance_some_volume"].rows) == 0
 
     # flush the batches and close the writer

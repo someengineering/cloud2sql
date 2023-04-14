@@ -1,1 +1,1 @@
-snowflake-sqlalchemy==1.4.6
+snowflake-sqlalchemy==1.4.7
