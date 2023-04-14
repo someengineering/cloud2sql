@@ -6,7 +6,7 @@ from typing import List, Any, Type, Tuple, Dict, Iterator, Optional
 from resotoclient.models import Kind, Model
 from resotolib.args import Namespace
 from resotolib.types import Json
-from resotolib.utils import parse_utc, utc_str
+from resotolib.utils import UTC_Date_Format
 from sqlalchemy import (
     Boolean,
     Column,
@@ -47,10 +47,10 @@ class DateTimeString(TypeDecorator):  # type: ignore
     cache_ok = True
 
     def process_bind_param(self, value: Optional[str], dialect: Dialect) -> Optional[datetime]:
-        return parse_utc(value) if value else None
+        return datetime.strptime(value, UTC_Date_Format) if value else None
 
     def process_result_value(self, value: Optional[datetime], dialect: Dialect) -> Optional[str]:
-        return utc_str(value) if value else None
+        return value.strftime(UTC_Date_Format) if value else None
 
 
 class DateString(TypeDecorator):  # type: ignore
