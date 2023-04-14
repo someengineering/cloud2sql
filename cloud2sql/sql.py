@@ -1,16 +1,30 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Any, Type, Tuple, Dict, Iterator
+from datetime import datetime, date
+from typing import List, Any, Type, Tuple, Dict, Iterator, Optional
 
 from resotoclient.models import Kind, Model
 from resotolib.args import Namespace
 from resotolib.types import Json
-from sqlalchemy import Boolean, Column, Float, Integer, JSON, MetaData, String, Table, DDL
-from sqlalchemy.engine import Engine, Connection
+from resotolib.utils import parse_utc, utc_str
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Float,
+    Integer,
+    JSON,
+    MetaData,
+    String,
+    Table,
+    DDL,
+    DateTime,
+    Date,
+    TypeDecorator,
+)
+from sqlalchemy.engine import Engine, Connection, Dialect
 from sqlalchemy.sql.ddl import DropTable, DropConstraint
 from sqlalchemy.sql.dml import ValuesBase
 
-from cloud2sql.util import value_in_path
 from cloud2sql.schema_utils import (
     base_kinds,
     temp_prefix,
@@ -19,8 +33,39 @@ from cloud2sql.schema_utils import (
     get_link_table_name,
     kind_properties,
 )
+from cloud2sql.util import value_in_path
 
 log = logging.getLogger("resoto.cloud2sql")
+
+
+class DateTimeString(TypeDecorator):  # type: ignore
+    """
+    This type decorator translates between string (python) and datetime (sqlalchemy) types.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: Optional[str], dialect: Dialect) -> Optional[datetime]:
+        return parse_utc(value) if value else None
+
+    def process_result_value(self, value: Optional[datetime], dialect: Dialect) -> Optional[str]:
+        return utc_str(value) if value else None
+
+
+class DateString(TypeDecorator):  # type: ignore
+    """
+    This type decorator translates between string (python) and date (sqlalchemy) types.
+    """
+
+    impl = Date
+    cache_ok = True
+
+    def process_bind_param(self, value: Optional[str], dialect: Dialect) -> Optional[date]:
+        return date.fromisoformat(value) if value else None
+
+    def process_result_value(self, value: Optional[datetime], dialect: Dialect) -> Optional[str]:
+        return value.strftime("%Y-%m-%d") if value else None
 
 
 def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEngine[Any]]
@@ -33,11 +78,15 @@ def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEn
         return JSON
     elif kind_name in ("int32", "int64"):
         return Integer
-    elif kind_name in "float":
+    elif kind_name == "float":
         return Float
-    elif kind_name in "double":
+    elif kind_name == "double":
         return Float  # use Double with sqlalchemy 2
-    elif kind_name in ("string", "date", "datetime", "duration"):
+    elif kind_name == "datetime":
+        return DateTimeString
+    elif kind_name == "date":
+        return DateString
+    elif kind_name in ("string", "duration"):
         return String
     elif kind_name == "boolean":
         return Boolean

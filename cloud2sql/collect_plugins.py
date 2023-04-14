@@ -76,21 +76,21 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
 
 def configure(path_to_config: Optional[str]) -> Json:
     # at least one key should be present
-    def require(keys: List[str], obj: Json, msg: str):
+    def require(keys: List[str], obj: Json, msg: str) -> None:
         if not (set(keys) & obj.keys()):
             raise ValueError(msg)
 
     config = {}
     if path_to_config:
         with open(path_to_config) as f:
-            config = yaml.safe_load(f)  # type: ignore
+            config = yaml.safe_load(f)
 
     if "sources" not in config:
         raise ValueError("No sources configured")
     if "destinations" not in config:
         raise ValueError("No destinations configured")
 
-    def validate_arrow_config(config: Json):
+    def validate_arrow_config(config: Json) -> None:
         require(["format"], config, "No format configured for arrow destination")
         if not config["format"] in ["parquet", "csv"]:
             raise ValueError("Format must be either parquet or csv")
@@ -202,7 +202,7 @@ def collect_to_file(
     # ingest the data
     writer = ArrowWriter(model, output_config)
     node: BaseResource
-    for node in sorted(collector.graph.nodes, key=lambda n: n.kind):
+    for node in sorted(collector.graph.nodes, key=lambda n: n.kind):  # type: ignore
         exported = prepare_node(node, collector)
         writer.insert_node(exported)
         ne_current += 1

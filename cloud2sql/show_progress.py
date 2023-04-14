@@ -66,4 +66,4 @@ def progress_to_table(progress: ProgressTree, max_height: int) -> RichTree:
                 walk_node(nid, child, sub)
         return sub
 
-    return walk_node(progress.sub_tree.root, progress.sub_tree.to_dict(with_data=True))
+    return walk_node(progress.sub_tree.root, progress.sub_tree.to_dict(with_data=True))  # type: ignore

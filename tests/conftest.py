@@ -1,5 +1,5 @@
 from queue import Queue
-from typing import List
+from typing import List, Iterator
 
 from resotoclient.models import Model, Kind, Property
 from pytest import fixture
@@ -71,7 +71,7 @@ def updater(model: Model) -> SqlDefaultUpdater:
 
 
 @fixture()
-def parquet_writer(model: Model):
+def parquet_writer(model: Model) -> Iterator[ArrowWriter]:
     parquet_model = ArrowModel(model, "parquet")
     parquet_model.create_schema([])
 
