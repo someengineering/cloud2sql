@@ -1,10 +1,13 @@
 from queue import Queue
 from typing import List, Iterator
 
+from resoto_plugin_example_collector import ExampleAccount, ExampleRegion, ExampleInstance, ExampleVolume
 from resotoclient.models import Model, Kind, Property
 from pytest import fixture
 from resotolib.args import Namespace
+from resotolib.baseresources import GraphRoot, Cloud
 from resotolib.core.actions import CoreFeedback
+from resotolib.graph import Graph
 from resotolib.types import Json
 from sqlalchemy.engine import create_engine, Engine
 
@@ -58,6 +61,27 @@ def model() -> Model:
         ),
     ]
     return Model({k.fqn: k for k in kinds})
+
+
+@fixture
+def example_collector_graph() -> Graph:
+    root = GraphRoot(id="root")
+    graph = Graph(root=root)
+    cloud = Cloud(id="example")
+    account = ExampleAccount(id="example-account")
+    region = ExampleRegion(id="example-region")
+    i1 = ExampleInstance(id="example-instance-1")
+    iv1 = ExampleVolume(id="example-volume-1")
+    i2 = ExampleInstance(id="example-instance-2")
+    iv2 = ExampleVolume(id="example-volume-1")
+    graph.add_resource(root, cloud)
+    graph.add_resource(cloud, account)
+    graph.add_resource(account, region)
+    graph.add_resource(region, i1)
+    graph.add_resource(i1, iv1)
+    graph.add_resource(region, i2)
+    graph.add_resource(i2, iv2)
+    return graph
 
 
 @fixture()
