@@ -33,6 +33,7 @@ from cloud2sql.analytics import AnalyticsEventSender
 from cloud2sql.arrow.config import ArrowOutputConfig
 from cloud2sql.show_progress import CollectInfo
 from cloud2sql.sql import SqlUpdater, sql_updater
+from cloud2sql.remote_graph import RemoteGraphCollector
 
 try:
     from cloud2sql.arrow.model import ArrowModel
@@ -65,9 +66,17 @@ def collectors(raw_config: Json, feedback: CoreFeedback) -> Dict[str, BaseCollec
             log.info(f"Found collector {plugin_class.cloud} ({plugin_class.__name__})")
             plugin_class.add_config(config)
             plugin = plugin_class()
-            if hasattr(plugin, "core_feedback"):
-                setattr(plugin, "core_feedback", feedback.with_context(plugin.cloud))
             result[plugin_class.cloud] = plugin
+
+    # lookup local plugins
+    if RemoteGraphCollector.cloud in raw_config:
+        log.info(f"Found collector {RemoteGraphCollector.cloud} ({RemoteGraphCollector.__name__})")
+        result[RemoteGraphCollector.cloud] = RemoteGraphCollector()
+        RemoteGraphCollector.add_config(config)
+
+    for plugin in result.values():
+        if hasattr(plugin, "core_feedback"):
+            setattr(plugin, "core_feedback", feedback.with_context(plugin.cloud))
 
     Config.init_default_config()
     Config.running_config.data = {**Config.running_config.data, **Config.read_config(raw_config)}
