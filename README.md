@@ -29,7 +29,7 @@ This will install the executable to the user install directory of your platform.
 
 ## Usage
 
-The sources and destinations for `cloud2sql` are configured via a configuration file. Create your own configuration by adjusting the [config template file](./config-template.yaml).
+The sources and destinations for `cloud2sql` are configured via a configuration file. Create your own configuration by adjusting the [config template file](config-template.yaml).
 
 You can safely delete the sections that are not relevant to you (e.g. if you do not use AWS, you can delete the `aws` section).
 All sections refer to cloud providers and are enabled if a configuration section is provided.
@@ -104,11 +104,11 @@ sources:
 
 ```yaml
 sources:
-digitalocean:
-  # DigitalOcean API tokens for the teams to be collected
-  api_tokens: []
-  # DigitalOcean Spaces access keys for the teams to be collected, separated by colons
-  spaces_access_keys: []
+  digitalocean:
+    # DigitalOcean API tokens for the teams to be collected
+    api_tokens: []
+    # DigitalOcean Spaces access keys for the teams to be collected, separated by colons
+    spaces_access_keys: []
 ```
 
 ### Destinations
@@ -225,7 +225,7 @@ Install the relevant driver and use the connection string from the documentation
 
 #### Example
 
-We use a minimal configuration [example](./config-example.yaml) and export the data to a SQLite database.
+We use a minimal configuration [example](config-example.yaml) and export the data to a SQLite database.
 The example uses our AWS default credentials and the default kubernetes config.
 
 ```bash
