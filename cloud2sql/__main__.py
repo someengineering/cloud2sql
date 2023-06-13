@@ -8,8 +8,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from cloud2sql import __version__
-from cloud2sql.analytics import PosthogEventSender, NoEventSender, AnalyticsEventSender
-from cloud2sql.collect_plugins import collect_from_plugins, configure, default_config
+from resotodatalink.analytics import PosthogEventSender, NoEventSender, AnalyticsEventSender
+from cloud2sql.collect import collect_from_plugins, configure, default_config
 from cloud2sql.util import db_string_from_config, check_parquet_driver
 
 # Will fail in case snowflake is not installed - which is fine.
