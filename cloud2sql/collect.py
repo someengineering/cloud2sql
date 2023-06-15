@@ -155,11 +155,11 @@ def collect(
     collector: BaseCollectorPlugin, engine: Optional[Engine], feedback: CoreFeedback, config: Json
 ) -> Tuple[str, int, int]:
     if engine:
-        return collect_sql(collector, engine, feedback)  # type: ignore
+        return collect_sql(collector, engine, feedback)
     else:
         if not {"file", "s3", "gcs"} & config["destinations"].keys():
             raise ValueError("No file destination configured")
-        return collect_to_file(collector, feedback, config["destinations"]["arrow"])  # type: ignore
+        return collect_to_file(collector, feedback, config["destinations"]["arrow"])
 
 
 def show_messages(core_messages: Queue[Json], end: Event) -> None:

@@ -9,9 +9,9 @@ posthog==3.0.1
 requests==2.31.0
 
 # all collector plugins
-resotodatalink==1.0.0
-resotolib==3.5.1
-resoto-plugin-aws==3.5.1
-resoto-plugin-digitalocean==3.5.1
-resoto-plugin-gcp==3.5.1
-resoto-plugin-k8s==3.5.1
+resotodatalink==1.0.1
+resotolib==3.5.2
+resoto-plugin-aws==3.5.2
+resoto-plugin-digitalocean==3.5.2
+resoto-plugin-gcp==3.5.2
+resoto-plugin-k8s==3.5.2
