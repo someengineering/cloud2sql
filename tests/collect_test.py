@@ -4,11 +4,10 @@ from resotolib.args import Namespace
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import Session
 
-from cloud2sql.analytics import NoEventSender
-from cloud2sql.collect_plugins import collect_from_plugins
+from resotodatalink.analytics import NoEventSender
+from cloud2sql.collect import collect_from_plugins
 
 import csv
-import os
 from pathlib import Path
 import pathlib
 from typing import Dict, List

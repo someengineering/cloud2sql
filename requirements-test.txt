@@ -1,9 +1,9 @@
 # test dependencies
-pytest==7.3.1
+pytest==7.3.2
 black==23.3.0
 flake8>=6.0.0
 mypy==1.3.0
-tox==4.5.1
+tox==4.6.0
 wheel>=0.38.4
-coverage==7.2.5
-resoto-plugin-example-collector>=3.4
+coverage==7.2.7
+resoto-plugin-example-collector==3.5.2

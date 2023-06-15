@@ -2,15 +2,16 @@
 
 # required for cloud2sql to run
 SQLAlchemy==1.4.45
-PyYAML>=6.0
-rich>=12.6.0
-resotoclient>=1.2.1
-posthog>=2.2.0
-requests>=2.28.2
+PyYAML==6.0
+rich==13.4.2
+resotoclient==1.4.1
+posthog==3.0.1
+requests==2.31.0
 
 # all collector plugins
-resotolib>=3.4.2, <3.5
-resoto-plugin-aws>=3.4.2, <3.5
-resoto-plugin-digitalocean>=3.4, <3.5
-resoto-plugin-gcp>=3.4.2, <3.5
-resoto-plugin-k8s>=3.4.2, <3.5
+resotodatalink==1.0.1
+resotolib==3.5.2
+resoto-plugin-aws==3.5.2
+resoto-plugin-digitalocean==3.5.2
+resoto-plugin-gcp==3.5.2
+resoto-plugin-k8s==3.5.2
