@@ -35,7 +35,7 @@ setup(
         "snowflake": required_snowflake,
         "parquet": required_parquet,
     },
-    license="Apache Software License 2.0",
+    license="GNU Affero General Public License v3 or later (AGPLv3+)",
     long_description=read("README.md"),
     long_description_content_type="text/markdown",
     include_package_data=True,
